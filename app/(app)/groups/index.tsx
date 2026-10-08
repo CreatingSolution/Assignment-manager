@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,13 +17,21 @@ import { COLORS, PRIORITY_COLORS } from '../../../constants';
 import { useGroups, useJoinGroup } from '../../../hooks/use-groups.hook';
 import { useCourses } from '../../../hooks/use-courses.hook';
 import { useRewardsStore } from '../../../store/rewards.store';
+import { useAuth } from '../../../hooks/use-auth.hook';
 
 export default function GroupsHomeScreen(): React.JSX.Element {
   const router = useRouter();
+  const { user } = useAuth();
   const { data: groups = [], isLoading } = useGroups();
   const { data: courses = [] } = useCourses();
   const joinGroup = useJoinGroup();
-  const coins = useRewardsStore((s) => s.coins);
+  const { coins, loadCoins } = useRewardsStore();
+
+  useEffect(() => {
+    if (user?.id) {
+      void loadCoins(user.id);
+    }
+  }, [user?.id, loadCoins]);
 
   // ─── Join Modal State ─────────────────────────────────────────────────────────
   const [joinModalVisible, setJoinModalVisible] = useState(false);
@@ -167,6 +175,11 @@ export default function GroupsHomeScreen(): React.JSX.Element {
 
                 <View style={styles.cardFooter}>
                   <Text style={styles.footerText}>👥 {item.memberCount} Approved Members</Text>
+                  {item.attachments && item.attachments.length > 0 ? (
+                    <Text style={styles.footerAttachText}>
+                      📎 {item.attachments.length} File{item.attachments.length > 1 ? 's' : ''}
+                    </Text>
+                  ) : null}
                   {item.pendingRequestsCount > 0 ? (
                     <View style={styles.pendingBadge}>
                       <Text style={styles.pendingBadgeText}>
@@ -350,6 +363,15 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   footerText: { fontSize: 12, color: COLORS.text.secondary },
+  footerAttachText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.primary,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
   pendingBadge: {
     backgroundColor: '#FEF2F2',
     paddingHorizontal: 8,

@@ -411,6 +411,11 @@ export default function AssignmentDetailScreen(): React.JSX.Element {
               <Text style={styles.manageAttachBtnText}>+ Attach / Edit</Text>
             </TouchableOpacity>
           </View>
+          {assignment.attachments && assignment.attachments.length > 0 ? (
+            <Text style={styles.attachmentsHint}>
+              Tap any file to view full-screen, or tap 📥 to download and save to your device anytime.
+            </Text>
+          ) : null}
           <AttachmentPicker
             attachments={assignment.attachments || []}
             editable={false}
@@ -1175,6 +1180,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
+  },
+  attachmentsHint: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
     marginBottom: 8,
   },
   manageAttachBtn: {

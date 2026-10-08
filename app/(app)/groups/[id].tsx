@@ -63,7 +63,13 @@ export default function GroupDetailScreen(): React.JSX.Element {
   const deleteGroupTask = useDeleteGroupTask();
   const completeGroupTask = useCompleteGroupTask();
   const createSubmission = useCreateGroupSubmission();
-  const coins = useRewardsStore((s) => s.coins);
+  const { coins, loadCoins } = useRewardsStore();
+
+  useEffect(() => {
+    if (user?.id) {
+      void loadCoins(user.id);
+    }
+  }, [user?.id, loadCoins]);
 
   // ─── Edit Group Modal State ──────────────────────────────────────────────────
   const [editGroupModalVisible, setEditGroupModalVisible] = useState(false);
@@ -504,6 +510,11 @@ export default function GroupDetailScreen(): React.JSX.Element {
                 <Text style={styles.manageAttachBtnText}>+ Attach / Edit</Text>
               </TouchableOpacity>
             </View>
+            {group.attachments && group.attachments.length > 0 ? (
+              <Text style={styles.groupAttachmentsHint}>
+                Tap any file to view full-screen, or tap 📥 to download and save to your device anytime.
+              </Text>
+            ) : null}
             <AttachmentPicker
               attachments={group.attachments || []}
               editable={false}
@@ -1538,6 +1549,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.text.primary,
+  },
+  groupAttachmentsHint: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    marginBottom: 8,
   },
   manageAttachBtn: {
     paddingVertical: 4,

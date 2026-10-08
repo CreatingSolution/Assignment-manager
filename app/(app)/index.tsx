@@ -18,7 +18,11 @@ import { useAssignments, useAssignmentCounts } from '../../hooks/use-assignments
 import { useCourses } from '../../hooks/use-courses.hook';
 import { useSync } from '../../hooks/use-sync.hook';
 import { useRewardsStore } from '../../store/rewards.store';
-import { analyzeAndRankAssignments, SmartAssignmentRanking } from '../../services/smart-scheduler.service';
+import {
+  analyzeAndRankAssignments,
+  SmartAssignmentRanking,
+  SmartSchedulePlan,
+} from '../../services/smart-scheduler.service';
 import { getDueStatus } from '../../utils/date.utils';
 import type { Assignment, Priority } from '../../types';
 
@@ -171,15 +175,19 @@ export default function HomeScreen(): React.JSX.Element {
   const [statusSubFilter, setStatusSubFilter] = useState<'all' | 'pending' | 'in_progress'>('all');
 
   useEffect(() => {
-    void loadCoins();
-  }, [loadCoins]);
+    if (user?.id) {
+      void loadCoins(user.id);
+    }
+  }, [user?.id, loadCoins]);
 
   const onRefresh = async () => {
     setSyncing(true);
     try {
       await triggerSync();
       await refetch();
-      await loadCoins();
+      if (user?.id) {
+        await loadCoins(user.id);
+      }
     } finally {
       setSyncing(false);
     }
@@ -190,16 +198,18 @@ export default function HomeScreen(): React.JSX.Element {
     [courses]
   );
 
-  // Top AI priority recommendation
-  const topSmartRecommendation: SmartAssignmentRanking | null = useMemo(() => {
+  // Individual Smart Plan: Personal Work Hours + Assigned Group Tasks + Dynamic AI Priority
+  const smartPlan: SmartSchedulePlan | null = useMemo(() => {
     if (!user?.id) return null;
     try {
-      const plan = analyzeAndRankAssignments(user.id);
-      return plan.rankedAssignments.length > 0 ? plan.rankedAssignments[0] : null;
+      return analyzeAndRankAssignments(user.id);
     } catch {
       return null;
     }
   }, [user?.id, assignments]);
+
+  const topSmartRecommendation: SmartAssignmentRanking | null =
+    smartPlan && smartPlan.rankedAssignments.length > 0 ? smartPlan.rankedAssignments[0] : null;
 
   // Dashboard filter: default hides completed assignments
   const filtered = useMemo(() => {
@@ -248,7 +258,9 @@ export default function HomeScreen(): React.JSX.Element {
             Hello, {user?.username ?? 'Student'} 👋
           </Text>
           <Text style={styles.subGreeting}>
-            {pending + inProgress > 0
+            {smartPlan && smartPlan.totalPendingHours > 0
+              ? `⏱️ ${smartPlan.totalPendingHours}h total workload (${smartPlan.personalWorkHours}h personal + ${smartPlan.groupWorkHours}h group)`
+              : pending + inProgress > 0
               ? `${pending} pending · ${inProgress} in progress`
               : 'All assignments caught up!'}
           </Text>
@@ -316,11 +328,24 @@ export default function HomeScreen(): React.JSX.Element {
         <TouchableOpacity
           style={styles.aiBanner}
           activeOpacity={0.85}
-          onPress={() => router.push('/smart-schedule')}
+          onPress={() => {
+            if (topSmartRecommendation.isGroup && topSmartRecommendation.groupId) {
+              router.push(`/groups/${topSmartRecommendation.groupId}` as any);
+            } else {
+              router.push('/smart-schedule');
+            }
+          }}
         >
           <View style={styles.aiBannerHeader}>
-            <View style={styles.aiTag}>
-              <Text style={styles.aiTagText}>⚡ AI PRIORITY FOCUS</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={styles.aiTag}>
+                <Text style={styles.aiTagText}>⚡ AI PRIORITY FOCUS</Text>
+              </View>
+              {topSmartRecommendation.isGroup ? (
+                <View style={styles.groupAiTag}>
+                  <Text style={styles.groupAiTagText}>👥 GROUP</Text>
+                </View>
+              ) : null}
             </View>
             <View
               style={[
@@ -341,7 +366,11 @@ export default function HomeScreen(): React.JSX.Element {
             {topSmartRecommendation.reason}
           </Text>
           <View style={styles.aiBannerFooter}>
-            <Text style={styles.aiBannerAction}>View Full AI Schedule & Priorities →</Text>
+            <Text style={styles.aiBannerAction}>
+              {topSmartRecommendation.isGroup
+                ? 'Open Group Workspace or View AI Schedule →'
+                : 'View Full AI Schedule & Priorities →'}
+            </Text>
           </View>
         </TouchableOpacity>
       ) : null}
@@ -575,6 +604,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  groupAiTag: {
+    backgroundColor: 'rgba(56, 189, 248, 0.25)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+  },
+  groupAiTagText: {
+    color: '#7dd3fc',
+    fontSize: 10,
+    fontWeight: '800',
   },
   urgencyPill: {
     paddingHorizontal: 8,

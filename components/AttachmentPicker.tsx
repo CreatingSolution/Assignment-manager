@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   Image,
@@ -13,6 +13,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { COLORS } from '../constants';
 import type { AttachmentItem } from '../types';
 import { generateId } from '../utils/id.utils';
+import { DocumentScannerModal } from './DocumentScannerModal';
+import { AttachmentViewerModal, downloadOrShareAttachment } from './AttachmentViewerModal';
 
 interface AttachmentPickerProps {
   attachments: AttachmentItem[];
@@ -40,6 +42,9 @@ export function AttachmentPicker({
   onChange,
   editable = true,
 }: AttachmentPickerProps): React.JSX.Element {
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [viewingItem, setViewingItem] = useState<AttachmentItem | null>(null);
+
   const handleTakeCamera = async () => {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -151,21 +156,8 @@ export function AttachmentPicker({
     onChange?.(attachments.filter((item) => item.id !== id));
   };
 
-  const handleOpenAttachment = async (item: AttachmentItem) => {
-    try {
-      const supported = await Linking.canOpenURL(item.uri);
-      if (supported) {
-        await Linking.openURL(item.uri);
-      } else {
-        // Fallback for file uris
-        await Linking.openURL(item.uri);
-      }
-    } catch {
-      Alert.alert(
-        'Attachment Preview',
-        `File: ${item.name}\n${item.size ? `Size: ${formatFileSize(item.size)}\n` : ''}Path: ${item.uri}`
-      );
-    }
+  const handleOpenAttachment = (item: AttachmentItem) => {
+    setViewingItem(item);
   };
 
   return (
@@ -197,6 +189,15 @@ export function AttachmentPicker({
           >
             <Text style={styles.actionButtonIcon}>📄</Text>
             <Text style={styles.actionButtonText}>PDF / Doc</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.scanButton]}
+            onPress={() => setScannerVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionButtonIcon}>📑</Text>
+            <Text style={[styles.actionButtonText, styles.scanButtonText]}>Scan to PDF</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -237,20 +238,56 @@ export function AttachmentPicker({
                   </Text>
                 </View>
 
-                {editable && (
+                <View style={styles.cardActions}>
                   <TouchableOpacity
-                    style={styles.removeBtn}
-                    onPress={() => handleRemove(item.id)}
+                    style={styles.cardActionBtn}
+                    onPress={() => setViewingItem(item)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={styles.removeBtnText}>✕</Text>
+                    <Text style={styles.cardActionIcon}>👁️</Text>
                   </TouchableOpacity>
-                )}
+
+                  <TouchableOpacity
+                    style={[styles.cardActionBtn, styles.downloadActionBtn]}
+                    onPress={() => downloadOrShareAttachment(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.cardActionIcon}>📥</Text>
+                  </TouchableOpacity>
+
+                  {editable && (
+                    <TouchableOpacity
+                      style={[styles.cardActionBtn, styles.removeBtn]}
+                      onPress={() => handleRemove(item.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.removeBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </TouchableOpacity>
             );
           })}
         </View>
       )}
+
+      {/* Document Scanner & PDF Modal */}
+      <DocumentScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onAttach={(scannedPdf) => {
+          onChange?.([...attachments, scannedPdf]);
+        }}
+      />
+
+      {/* Attachment Viewer & Downloader Modal */}
+      <AttachmentViewerModal
+        visible={!!viewingItem}
+        item={viewingItem}
+        onClose={() => setViewingItem(null)}
+        onRemove={editable ? handleRemove : undefined}
+        canRemove={editable}
+      />
     </View>
   );
 }
@@ -261,11 +298,13 @@ const styles = StyleSheet.create({
   },
   actionButtonsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
   },
   actionButton: {
     flex: 1,
+    minWidth: '47%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -276,6 +315,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#BFDBFE',
+  },
+  scanButton: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  scanButtonText: {
+    color: '#15803D',
   },
   actionButtonIcon: {
     fontSize: 16,
@@ -339,18 +385,39 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     marginTop: 2,
   },
-  removeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  downloadActionBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  cardActionIcon: {
+    fontSize: 14,
+  },
+  removeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   removeBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#EF4444',
   },
 });
 

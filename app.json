@@ -39,7 +39,8 @@
         {
           "enableFTS": false
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

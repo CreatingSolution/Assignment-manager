@@ -396,7 +396,7 @@ export function useCompleteGroupTask() {
       const result = repo.completeGroupTask(taskId, user.id);
 
       if (result.earnedCoin && result.coinsAwarded > 0) {
-        await awardCoins(result.coinsAwarded, 'Completed group task before target date!');
+        await awardCoins(result.coinsAwarded, 'Completed group task before target date!', user.id);
       }
 
       return result;
