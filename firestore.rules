@@ -30,11 +30,26 @@ service cloud.firestore {
       match /assignments/{assignmentId} {
         allow read, write: if isOwner(userId);
 
+        // Submissions & sub-deadlines
+        match /submissions/{subId} {
+          allow read, write: if isOwner(userId);
+        }
+
         // Subtasks under assignment
         match /tasks/{taskId} {
           allow read, write: if isOwner(userId);
         }
       }
+    }
+
+    // ─── Group Assignments ────────────────────────────────────────────────────
+
+    match /groups/{groupId} {
+      // Any authenticated user can read or join groups with valid access token
+      allow read, create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      // Only the group admin can delete the group
+      allow delete: if isAuthenticated() && resource.data.adminUserId == request.auth.uid;
     }
   }
 }

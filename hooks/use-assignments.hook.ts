@@ -1,12 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
 import {
   getAssignmentRepository,
+  getCourseRepository,
+  getSubmissionRepository,
+  getTaskRepository,
 } from '../database';
 import { enqueueOperation } from '../sync/queue';
+import {
+  cancelAssignmentNotifications,
+  scheduleAssignmentNotifications,
+} from '../services/notification.service';
 import type {
   Assignment,
   CreateAssignmentInput,
+  Submission,
+  Task,
   UpdateAssignmentInput,
 } from '../types';
 import { generateId } from '../utils/id.utils';
@@ -18,13 +26,12 @@ export const assignmentKeys = {
   all: ['assignments'] as const,
   byUser: (userId: string) => [...assignmentKeys.all, userId] as const,
   byId: (id: string) => [...assignmentKeys.all, 'detail', id] as const,
+  tasks: (assignmentId: string) => [...assignmentKeys.all, 'tasks', assignmentId] as const,
+  submissions: (assignmentId: string) => [...assignmentKeys.all, 'submissions', assignmentId] as const,
 };
 
 // ─── Read Hooks ────────────────────────────────────────────────────────────────
 
-/**
- * Returns all assignments for the current user from the local SQLite database.
- */
 export function useAssignments() {
   const { user } = useAuth();
   const repo = getAssignmentRepository();
@@ -39,9 +46,6 @@ export function useAssignments() {
   });
 }
 
-/**
- * Returns a single assignment by ID.
- */
 export function useAssignment(id: string) {
   const repo = getAssignmentRepository();
 
@@ -52,9 +56,26 @@ export function useAssignment(id: string) {
   });
 }
 
-/**
- * Returns assignment status counts for the current user.
- */
+export function useAssignmentTasks(assignmentId: string) {
+  const repo = getTaskRepository();
+
+  return useQuery({
+    queryKey: assignmentKeys.tasks(assignmentId),
+    queryFn: () => (assignmentId ? repo.findByAssignment(assignmentId) : []),
+    enabled: !!assignmentId,
+  });
+}
+
+export function useAssignmentSubmissions(assignmentId: string) {
+  const repo = getSubmissionRepository();
+
+  return useQuery({
+    queryKey: assignmentKeys.submissions(assignmentId),
+    queryFn: () => (assignmentId ? repo.findByAssignment(assignmentId) : []),
+    enabled: !!assignmentId,
+  });
+}
+
 export function useAssignmentCounts() {
   const { user } = useAuth();
   const repo = getAssignmentRepository();
@@ -71,22 +92,79 @@ export function useAssignmentCounts() {
 
 // ─── Mutation Hooks ────────────────────────────────────────────────────────────
 
-/**
- * Creates an assignment locally and enqueues a sync operation.
- */
+export interface SubtaskDraft {
+  title: string;
+  targetDate?: string;
+  estimatedHours?: number;
+  submissionIndex?: number;
+}
+
+export interface SubmissionDraft {
+  title: string;
+  deadline: string;
+}
+
+export interface CreateFullAssignmentInput extends Omit<CreateAssignmentInput, 'userId'> {
+  subtasks?: SubtaskDraft[];
+  submissions?: SubmissionDraft[];
+}
+
 export function useCreateAssignment() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const repo = getAssignmentRepository();
+  const assignmentRepo = getAssignmentRepository();
+  const courseRepo = getCourseRepository();
+  const taskRepo = getTaskRepository();
+  const submissionRepo = getSubmissionRepository();
 
   return useMutation({
-    mutationFn: async (
-      input: Omit<CreateAssignmentInput, 'userId'>
-    ): Promise<Assignment> => {
+    mutationFn: async (input: CreateFullAssignmentInput): Promise<Assignment> => {
       if (!user?.id) throw new Error('Not authenticated');
 
-      const created = repo.create({ ...input, userId: user.id });
+      const { subtasks = [], submissions = [], ...assignmentData } = input;
 
+      // Safely ensure course exists in courses table to prevent SQLite Foreign Key constraint failure
+      const rawCourse = assignmentData.courseId?.trim() || 'GENERAL';
+      let resolvedCourseId = rawCourse;
+      const existing = courseRepo.findById(rawCourse);
+      if (existing) {
+        resolvedCourseId = existing.id;
+      } else {
+        // Check if course with same code or title exists for this user
+        const allCourses = courseRepo.findAll(user.id);
+        const matched = allCourses.find(
+          (c) =>
+            c.code.toLowerCase() === rawCourse.toLowerCase() ||
+            c.title.toLowerCase() === rawCourse.toLowerCase()
+        );
+        if (matched) {
+          resolvedCourseId = matched.id;
+        } else {
+          // Auto-create course record so FK constraint is satisfied
+          const newCourse = courseRepo.create({
+            userId: user.id,
+            code: rawCourse,
+            title: rawCourse === 'GENERAL' ? 'General' : rawCourse,
+            color: '#3B82F6',
+          });
+          resolvedCourseId = newCourse.id;
+          enqueueOperation({
+            userId: user.id,
+            entityType: 'course',
+            entityId: newCourse.id,
+            operation: 'CREATE',
+            payload: newCourse,
+          });
+        }
+      }
+
+      const created = assignmentRepo.create({
+        ...assignmentData,
+        courseId: resolvedCourseId,
+        userId: user.id,
+      });
+
+      // 1. Enqueue assignment creation
       enqueueOperation({
         userId: user.id,
         entityType: 'assignment',
@@ -95,19 +173,65 @@ export function useCreateAssignment() {
         payload: created,
       });
 
+      // 2. Schedule push notifications for deadline alerts (3d, 2d, today)
+      void scheduleAssignmentNotifications(created);
+
+      // 3. Create submissions / sub-deadlines if specified
+      const createdSubmissions: Submission[] = [];
+      for (const sub of submissions) {
+        if (sub.title.trim()) {
+          const createdSub = submissionRepo.create({
+            assignmentId: created.id,
+            userId: user.id,
+            title: sub.title.trim(),
+            deadline: sub.deadline,
+          });
+          createdSubmissions.push(createdSub);
+        }
+      }
+
+      // 4. Create subtasks
+      for (let i = 0; i < subtasks.length; i++) {
+        const draft = subtasks[i];
+        if (!draft.title.trim()) continue;
+
+        let linkedSubId: string | undefined = undefined;
+        if (draft.submissionIndex !== undefined && createdSubmissions[draft.submissionIndex]) {
+          linkedSubId = createdSubmissions[draft.submissionIndex].id;
+        }
+
+        const task = taskRepo.create({
+          assignmentId: created.id,
+          submissionId: linkedSubId,
+          userId: user.id,
+          title: draft.title.trim(),
+          targetDate: draft.targetDate,
+          estimatedHours: draft.estimatedHours,
+          status: 'pending',
+          orderIndex: i,
+        });
+
+        enqueueOperation({
+          userId: user.id,
+          entityType: 'task',
+          entityId: task.id,
+          operation: 'CREATE',
+          payload: task,
+        });
+      }
+
       return created;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       if (user?.id) {
         void queryClient.invalidateQueries({ queryKey: assignmentKeys.byUser(user.id) });
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.tasks(data.id) });
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.submissions(data.id) });
       }
     },
   });
 }
 
-/**
- * Updates an assignment locally and enqueues a sync operation.
- */
 export function useUpdateAssignment() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -132,6 +256,13 @@ export function useUpdateAssignment() {
           operation: 'UPDATE',
           payload: updated,
         });
+
+        // If completed, cancel notification alerts; otherwise reschedule
+        if (updated.status === 'completed') {
+          void cancelAssignmentNotifications(id);
+        } else {
+          void scheduleAssignmentNotifications(updated);
+        }
       }
       return updated;
     },
@@ -144,9 +275,6 @@ export function useUpdateAssignment() {
   });
 }
 
-/**
- * Soft-deletes an assignment locally and enqueues a sync operation.
- */
 export function useDeleteAssignment() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -158,6 +286,7 @@ export function useDeleteAssignment() {
 
       const success = repo.softDelete(id);
       if (success) {
+        void cancelAssignmentNotifications(id);
         enqueueOperation({
           userId: user.id,
           entityType: 'assignment',
@@ -176,3 +305,35 @@ export function useDeleteAssignment() {
   });
 }
 
+export function useToggleTaskStatus() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const repo = getTaskRepository();
+
+  return useMutation({
+    mutationFn: async ({ taskId, currentStatus }: { taskId: string; currentStatus: string }): Promise<Task | null> => {
+      if (!user?.id) throw new Error('Not authenticated');
+
+      const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
+      const updated = repo.update(taskId, { status: newStatus });
+      if (updated) {
+        enqueueOperation({
+          userId: user.id,
+          entityType: 'task',
+          entityId: taskId,
+          operation: 'UPDATE',
+          payload: updated,
+        });
+      }
+      return updated;
+    },
+    onSuccess: (data) => {
+      if (data) {
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.tasks(data.assignmentId) });
+        if (user?.id) {
+          void queryClient.invalidateQueries({ queryKey: assignmentKeys.byUser(user.id) });
+        }
+      }
+    },
+  });
+}

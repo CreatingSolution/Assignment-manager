@@ -10,7 +10,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { firestoreDb, isFirebaseConfigured } from './firebase.config';
-import type { Assignment, Course, Task, User } from '../types';
+import type { Assignment, Course, Submission, Task, User } from '../types';
 
 /**
  * Cloud Firestore Service
@@ -297,4 +297,68 @@ export async function fetchRemoteUserData(userId: string): Promise<RemoteUserDat
 
   return { assignments, courses, tasks };
 }
+
+// ─── Submissions ──────────────────────────────────────────────────────────────
+
+export async function syncSubmissionToFirestore(
+  userId: string,
+  submission: Submission
+): Promise<void> {
+  const db = getDb();
+  const subRef = doc(
+    db,
+    'users',
+    userId,
+    'assignments',
+    submission.assignmentId,
+    'submissions',
+    submission.id
+  );
+  await setDoc(
+    subRef,
+    {
+      id: submission.id,
+      assignmentId: submission.assignmentId,
+      userId: submission.userId,
+      title: submission.title,
+      deadline: submission.deadline,
+      createdAt: submission.createdAt,
+      updatedAt: submission.updatedAt,
+      serverUpdatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+// ─── Group Assignments ────────────────────────────────────────────────────────
+
+export async function syncGroupToFirestore(
+  group: { id: string; name: string; accessToken: string; adminUserId: string; assignmentId?: string },
+  members: Array<{ id: string; groupId: string; userId: string; status: string; joinedAt?: number }>,
+  tasks: Array<{ id: string; groupId: string; title: string; description?: string; targetDate?: string; status: string; createdByUserId: string }>
+): Promise<void> {
+  const db = getDb();
+  const groupRef = doc(db, 'groups', group.id);
+  await setDoc(
+    groupRef,
+    {
+      id: group.id,
+      name: group.name,
+      accessToken: group.accessToken,
+      adminUserId: group.adminUserId,
+      assignmentId: group.assignmentId ?? null,
+      members,
+      tasks,
+      serverUpdatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function deleteGroupFromFirestore(groupId: string): Promise<void> {
+  const db = getDb();
+  const groupRef = doc(db, 'groups', groupId);
+  await deleteDoc(groupRef);
+}
+
 
