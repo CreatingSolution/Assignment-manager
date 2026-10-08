@@ -25,6 +25,7 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
       { name: 'estimated_days', type: 'REAL' },
       { name: 'hours_per_day', type: 'REAL' },
       { name: 'status', type: "TEXT NOT NULL DEFAULT 'pending'" },
+      { name: 'attachments', type: 'TEXT' },
       { name: 'is_synced', type: 'INTEGER NOT NULL DEFAULT 0' },
       { name: 'is_deleted', type: 'INTEGER NOT NULL DEFAULT 0' },
     ];
@@ -74,6 +75,7 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
       { name: 'estimated_hours', type: 'REAL' },
       { name: 'estimated_days', type: 'REAL' },
       { name: 'hours_per_day', type: 'REAL' },
+      { name: 'attachments', type: 'TEXT' },
     ];
 
     try {
@@ -112,6 +114,17 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
       const subColNames = new Set(existingSubCols.map((c) => c.name));
       if (!subColNames.has('group_id')) {
         await db.execAsync('ALTER TABLE submissions ADD COLUMN group_id TEXT;');
+      }
+    } catch {
+      // Handled by ALL_CREATE_TABLES
+    }
+
+    // 7. Safely reconcile columns on group_members table
+    try {
+      const existingMemberCols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(group_members);');
+      const memberColNames = new Set(existingMemberCols.map((c) => c.name));
+      if (!memberColNames.has('username')) {
+        await db.execAsync('ALTER TABLE group_members ADD COLUMN username TEXT;');
       }
     } catch {
       // Handled by ALL_CREATE_TABLES

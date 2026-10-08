@@ -107,8 +107,31 @@ export class SubmissionRepository {
     }
   }
 
+  update(id: string, updates: { title?: string; deadline?: string }): Submission | null {
+    const existing = this.findById(id);
+    if (!existing) return null;
+
+    const now = Date.now();
+    this.db.runSync(
+      `UPDATE submissions SET title = ?, deadline = ?, updated_at = ?, is_synced = 0 WHERE id = ?`,
+      [
+        updates.title !== undefined ? updates.title.trim() : existing.title,
+        updates.deadline !== undefined ? updates.deadline : existing.deadline,
+        now,
+        id,
+      ]
+    );
+
+    return this.findById(id);
+  }
+
   delete(id: string): boolean {
-    const result = this.db.runSync('DELETE FROM submissions WHERE id = ?', [id]);
-    return result.changes > 0;
+    this.db.withTransactionSync(() => {
+      // Unlink tasks referencing this submission
+      this.db.runSync('UPDATE tasks SET submission_id = NULL WHERE submission_id = ?', [id]);
+      this.db.runSync('UPDATE group_tasks SET submission_id = NULL WHERE submission_id = ?', [id]);
+      this.db.runSync('DELETE FROM submissions WHERE id = ?', [id]);
+    });
+    return true;
   }
 }

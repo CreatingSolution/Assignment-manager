@@ -389,4 +389,28 @@ export async function deleteGroupFromFirestore(groupId: string): Promise<void> {
   await deleteDoc(groupRef);
 }
 
+export async function checkFirestoreUsernameTaken(username: string): Promise<boolean> {
+  if (!isFirebaseConfigured() || !firestoreDb) return false;
+  try {
+    const clean = username.trim().toLowerCase();
+    // Query users collection for username matches
+    const usersRef = collection(firestoreDb, 'users');
+    const q = query(usersRef, where('username', '==', clean));
+    const snap = await getDocs(q);
+    if (!snap.empty) return true;
+
+    // Check with original casing as well in case saved without lowercase
+    if (clean !== username.trim()) {
+      const qOriginal = query(usersRef, where('username', '==', username.trim()));
+      const snapOriginal = await getDocs(qOriginal);
+      if (!snapOriginal.empty) return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.warn('[Firestore] checkFirestoreUsernameTaken warning:', error);
+    return false;
+  }
+}
+
 

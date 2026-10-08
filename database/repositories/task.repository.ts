@@ -45,7 +45,11 @@ export class TaskRepository {
     const rows = this.db.getAllSync<TaskRow>(
       `SELECT * FROM tasks
        WHERE assignment_id = ? AND is_deleted = 0
-       ORDER BY order_index ASC, created_at ASC`,
+       ORDER BY
+         CASE WHEN target_date IS NULL OR target_date = '' THEN 1 ELSE 0 END,
+         target_date ASC,
+         order_index ASC,
+         created_at ASC`,
       [assignmentId]
     );
     return rows.map(mapRow);

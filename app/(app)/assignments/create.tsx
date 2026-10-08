@@ -23,7 +23,8 @@ import {
 import { useCourses } from '../../../hooks/use-courses.hook';
 import { suggestSubtaskTargetDates } from '../../../services/smart-scheduler.service';
 import { DatePickerModal } from '../../../components/DatePickerModal';
-import type { Priority } from '../../../types';
+import { AttachmentPicker } from '../../../components/AttachmentPicker';
+import type { AttachmentItem, Priority } from '../../../types';
 
 const COURSE_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4'];
 
@@ -58,6 +59,7 @@ export default function CreateAssignmentScreen(): React.JSX.Element {
   const [sourceUrl, setSourceUrl] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
   const [totalMarks, setTotalMarks] = useState('');
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
 
   // Calendar Deadline (Default: +14 days)
   const [deadline, setDeadline] = useState(() => {
@@ -210,6 +212,7 @@ export default function CreateAssignmentScreen(): React.JSX.Element {
         estimatedHours: parsedHours,
         estimatedDays: parsedDays,
         hoursPerDay: parsedHpd,
+        attachments: attachments.length > 0 ? attachments : undefined,
         status: 'pending',
         subtasks: validSubtasks,
         submissions: validSubmissions,
@@ -560,6 +563,18 @@ export default function CreateAssignmentScreen(): React.JSX.Element {
               numberOfLines={3}
               value={description}
               onChangeText={setDescription}
+            />
+          </View>
+
+          {/* Attachments & Files */}
+          <View style={styles.field}>
+            <Text style={styles.label}>
+              📎 Attachments & Documents (PDF, Word, Camera, Gallery)
+            </Text>
+            <AttachmentPicker
+              attachments={attachments}
+              onChange={setAttachments}
+              editable={true}
             />
           </View>
 

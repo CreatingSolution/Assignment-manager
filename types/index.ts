@@ -35,6 +35,15 @@ export interface Course {
   isDeleted: boolean;
 }
 
+export interface AttachmentItem {
+  id: string;
+  name: string;
+  uri: string;
+  type: 'image' | 'document';
+  size?: number;
+  mimeType?: string;
+}
+
 export interface Assignment {
   id: string;
   userId: string;
@@ -49,6 +58,7 @@ export interface Assignment {
   estimatedDays?: number;    // estimated days planned for this assignment
   hoursPerDay?: number;      // estimated hours per day
   status: AssignmentStatus;
+  attachments?: AttachmentItem[];
   createdAt: number;
   updatedAt: number;
   isSynced: boolean;
@@ -98,15 +108,26 @@ export interface Group {
   estimatedHours?: number;
   estimatedDays?: number;
   hoursPerDay?: number;
+  attachments?: AttachmentItem[];
   createdAt: number;
   updatedAt: number;
   isSynced: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  email: string;
+  name?: string;
+  avatarColor?: string;
+  createdAt: number;
 }
 
 export interface GroupMember {
   id: string;
   groupId: string;
   userId: string;
+  username?: string;
   status: GroupMemberStatus;
   joinedAt?: number;
 }
@@ -194,4 +215,7 @@ export type UpdateAssignmentInput = Partial<Omit<Assignment, 'id' | 'userId' | '
 
 export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'isSynced' | 'isDeleted'>;
 export type UpdateTaskInput = Partial<Omit<Task, 'id' | 'userId' | 'assignmentId' | 'createdAt' | 'isSynced'>>;
+
+export type CreateGroupInput = Omit<Group, 'id' | 'accessToken' | 'createdAt' | 'updatedAt' | 'isSynced'>;
+export type UpdateGroupInput = Partial<Omit<Group, 'id' | 'adminUserId' | 'accessToken' | 'createdAt' | 'isSynced'>>;
 

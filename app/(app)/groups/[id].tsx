@@ -28,9 +28,14 @@ import {
   useGroupSubmissions,
   useGroupTasks,
   useManageGroupMember,
+  useUpdateGroup,
+  useUpdateGroupTask,
 } from '../../../hooks/use-groups.hook';
+import type { EnrichedGroupTask } from '../../../database/repositories/group.repository';
 import { useRewardsStore } from '../../../store/rewards.store';
 import { DatePickerModal } from '../../../components/DatePickerModal';
+import { AttachmentPicker } from '../../../components/AttachmentPicker';
+import type { AttachmentItem, Priority } from '../../../types';
 
 export default function GroupDetailScreen(): React.JSX.Element {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -52,11 +57,35 @@ export default function GroupDetailScreen(): React.JSX.Element {
   const manageMember = useManageGroupMember();
   const addMember = useAddGroupMember();
   const deleteGroup = useDeleteGroup();
+  const updateGroup = useUpdateGroup();
   const createGroupTask = useCreateGroupTask();
+  const updateGroupTask = useUpdateGroupTask();
   const deleteGroupTask = useDeleteGroupTask();
   const completeGroupTask = useCompleteGroupTask();
   const createSubmission = useCreateGroupSubmission();
   const coins = useRewardsStore((s) => s.coins);
+
+  // ─── Edit Group Modal State ──────────────────────────────────────────────────
+  const [editGroupModalVisible, setEditGroupModalVisible] = useState(false);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupCourseId, setEditGroupCourseId] = useState('');
+  const [editGroupPriority, setEditGroupPriority] = useState<Priority>('medium');
+  const [editGroupDeadline, setEditGroupDeadline] = useState('');
+  const [editGroupTotalMarks, setEditGroupTotalMarks] = useState('');
+  const [editGroupEstimatedHours, setEditGroupEstimatedHours] = useState('');
+  const [editGroupEstimatedDays, setEditGroupEstimatedDays] = useState('');
+  const [editGroupHoursPerDay, setEditGroupHoursPerDay] = useState('');
+  const [editGroupDescription, setEditGroupDescription] = useState('');
+  const [editGroupAttachments, setEditGroupAttachments] = useState<AttachmentItem[]>([]);
+  const [editGroupDatePickerVisible, setEditGroupDatePickerVisible] = useState(false);
+
+  // Helper to resolve human-readable usernames
+  const getMemberDisplayName = (userId: string): string => {
+    if (userId === user?.id) return 'You';
+    const found = members.find((m) => m.userId === userId);
+    if (found?.username) return found.username;
+    return `Member (${userId.slice(0, 6)})`;
+  };
 
   // ─── Modal States ─────────────────────────────────────────────────────────────
   // 1. New Task Modal
@@ -72,6 +101,16 @@ export default function GroupDetailScreen(): React.JSX.Element {
   const [taskPhaseId, setTaskPhaseId] = useState<string | undefined>(undefined);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [taskDatePickerVisible, setTaskDatePickerVisible] = useState(false);
+
+  // 1b. Edit Task Modal
+  const [editTaskModalVisible, setEditTaskModalVisible] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [editTaskDescription, setEditTaskDescription] = useState('');
+  const [editTaskTargetDate, setEditTaskTargetDate] = useState('');
+  const [editTaskEstHours, setEditTaskEstHours] = useState('2');
+  const [editSelectedAssignees, setEditSelectedAssignees] = useState<string[]>([]);
+  const [editTaskDatePickerVisible, setEditTaskDatePickerVisible] = useState(false);
 
   // 2. Add Member Directly Modal (Admin only)
   const [addMemberModalVisible, setAddMemberModalVisible] = useState(false);
@@ -178,6 +217,52 @@ export default function GroupDetailScreen(): React.JSX.Element {
     }
   };
 
+  const openEditTask = (task: EnrichedGroupTask) => {
+    setEditingTaskId(task.id);
+    setEditTaskTitle(task.title);
+    setEditTaskDescription(task.description || '');
+    setEditTaskTargetDate(task.targetDate || '');
+    setEditTaskEstHours(task.estimatedHours ? String(task.estimatedHours) : '');
+    setEditSelectedAssignees(task.assignedUserIds || []);
+    setEditTaskModalVisible(true);
+  };
+
+  const handleSaveEditTask = async () => {
+    if (!editingTaskId || !editTaskTitle.trim()) {
+      Alert.alert('Required', 'Please enter a task title.');
+      return;
+    }
+    try {
+      const estH = editTaskEstHours ? parseFloat(editTaskEstHours) : undefined;
+      await updateGroupTask.mutateAsync({
+        taskId: editingTaskId,
+        groupId: group.id,
+        updates: {
+          title: editTaskTitle.trim(),
+          description: editTaskDescription.trim() || undefined,
+          targetDate: editTaskTargetDate.trim() || undefined,
+          estimatedHours: isNaN(estH ?? NaN) ? undefined : estH,
+          assignedUserIds: editSelectedAssignees,
+        },
+      });
+      setEditTaskModalVisible(false);
+      setEditingTaskId(null);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to update task');
+    }
+  };
+
+  const handleDeleteTask = (taskId: string, title: string) => {
+    Alert.alert('Delete Task', `Are you sure you want to delete "${title}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => deleteGroupTask.mutate({ taskId, groupId: group.id }),
+      },
+    ]);
+  };
+
   const handleCompleteTask = async (taskId: string) => {
     try {
       const res = await completeGroupTask.mutateAsync({ taskId, groupId: group.id });
@@ -227,6 +312,57 @@ export default function GroupDetailScreen(): React.JSX.Element {
     }
   };
 
+  const openEditGroup = () => {
+    setEditGroupName(group.name);
+    setEditGroupCourseId(group.courseId || '');
+    setEditGroupPriority(group.priority || 'medium');
+    setEditGroupDeadline(group.deadline?.split('T')[0] || '');
+    setEditGroupTotalMarks(group.totalMarks ? String(group.totalMarks) : '');
+    setEditGroupEstimatedHours(group.estimatedHours ? String(group.estimatedHours) : '');
+    setEditGroupEstimatedDays(group.estimatedDays ? String(group.estimatedDays) : '');
+    setEditGroupHoursPerDay(group.hoursPerDay ? String(group.hoursPerDay) : '');
+    setEditGroupDescription(group.description || '');
+    setEditGroupAttachments(group.attachments || []);
+    setEditGroupModalVisible(true);
+  };
+
+  const handleSaveEditGroup = async () => {
+    if (!editGroupName.trim()) {
+      Alert.alert('Required', 'Please enter a group assignment name.');
+      return;
+    }
+    try {
+      const estH = editGroupEstimatedHours ? parseFloat(editGroupEstimatedHours) : undefined;
+      const estD = editGroupEstimatedDays ? parseFloat(editGroupEstimatedDays) : undefined;
+      const hpd = editGroupHoursPerDay ? parseFloat(editGroupHoursPerDay) : undefined;
+      const marks = editGroupTotalMarks ? parseFloat(editGroupTotalMarks) : undefined;
+
+      await updateGroup.mutateAsync({
+        id: group.id,
+        updates: {
+          name: editGroupName.trim(),
+          courseId: editGroupCourseId || undefined,
+          priority: editGroupPriority,
+          deadline: editGroupDeadline
+            ? editGroupDeadline.includes('T')
+              ? editGroupDeadline
+              : `${editGroupDeadline}T23:59:59.000Z`
+            : group.deadline,
+          totalMarks: isNaN(marks ?? NaN) ? undefined : marks,
+          estimatedHours: isNaN(estH ?? NaN) ? undefined : estH,
+          estimatedDays: isNaN(estD ?? NaN) ? undefined : estD,
+          hoursPerDay: isNaN(hpd ?? NaN) ? undefined : hpd,
+          description: editGroupDescription.trim() || undefined,
+          attachments: editGroupAttachments,
+        },
+      });
+      setEditGroupModalVisible(false);
+      Alert.alert('Updated', 'Group assignment details updated successfully.');
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to update group assignment');
+    }
+  };
+
   const handleDeleteGroup = () => {
     const otherMembers = approvedMembers.filter((m) => m.userId !== user?.id);
     if (otherMembers.length > 0) {
@@ -271,8 +407,13 @@ export default function GroupDetailScreen(): React.JSX.Element {
         <Text style={styles.navTitle} numberOfLines={1}>
           {group.name}
         </Text>
-        <View style={styles.coinBadge}>
-          <Text style={styles.coinBadgeText}>🪙 {coins}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={openEditGroup} style={styles.editHeaderBtn}>
+            <Text style={styles.editHeaderBtnText}>Edit</Text>
+          </TouchableOpacity>
+          <View style={styles.coinBadge}>
+            <Text style={styles.coinBadgeText}>🪙 {coins}</Text>
+          </View>
         </View>
       </View>
 
@@ -354,6 +495,20 @@ export default function GroupDetailScreen(): React.JSX.Element {
               <Text style={styles.shareBtnText}>📋 Share Token</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Attachments Section */}
+          <View style={styles.groupAttachmentsSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.groupAttachmentsTitle}>📎 Group Attachments & Documents</Text>
+              <TouchableOpacity onPress={openEditGroup} style={styles.manageAttachBtn}>
+                <Text style={styles.manageAttachBtnText}>+ Attach / Edit</Text>
+              </TouchableOpacity>
+            </View>
+            <AttachmentPicker
+              attachments={group.attachments || []}
+              editable={false}
+            />
+          </View>
         </View>
 
         {/* ─── Pending Requests Section (Admin Only) ──────────────────────────── */}
@@ -369,7 +524,9 @@ export default function GroupDetailScreen(): React.JSX.Element {
             {pendingRequests.map((req) => (
               <View key={req.id} style={styles.requestCard}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.requestUser}>User ID: {req.userId}</Text>
+                  <Text style={styles.requestUser}>
+                    👤 {req.username || `User (${req.userId.slice(0, 8)})`}
+                  </Text>
                   <Text style={styles.requestDate}>
                     Requested: {req.joinedAt ? new Date(req.joinedAt).toLocaleTimeString() : 'Recently'}
                   </Text>
@@ -477,25 +634,32 @@ export default function GroupDetailScreen(): React.JSX.Element {
                                 </Text>
                               ) : null}
                               <Text style={styles.taskAssignees}>
-                                👥 {t.assignedUserIds.length} Assigned
+                                👤 {t.assignedUserIds.length > 0
+                                  ? t.assignedUserIds.map((uid) => getMemberDisplayName(uid)).join(', ')
+                                  : 'Unassigned'}
                               </Text>
                             </View>
                           </View>
 
-                          {isCompleted ? (
-                            <View style={styles.rewardTag}>
-                              <Text style={styles.rewardTagText}>+10 🪙</Text>
-                            </View>
-                          ) : (
+                          <View style={styles.taskActionsRow}>
+                            {isCompleted ? (
+                              <View style={styles.rewardTag}>
+                                <Text style={styles.rewardTagText}>+10 🪙</Text>
+                              </View>
+                            ) : null}
                             <TouchableOpacity
-                              onPress={() =>
-                                deleteGroupTask.mutate({ taskId: t.id, groupId: group.id })
-                              }
+                              onPress={() => openEditTask(t)}
+                              style={styles.editTaskBtn}
+                            >
+                              <Text style={styles.editTaskBtnText}>✏️</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleDeleteTask(t.id, t.title)}
                               style={styles.deleteTaskBtn}
                             >
-                              <Text style={{ color: COLORS.text.muted, fontSize: 13 }}>✕</Text>
+                              <Text style={styles.deleteTaskBtnText}>✕</Text>
                             </TouchableOpacity>
-                          )}
+                          </View>
                         </View>
                       );
                     })
@@ -563,24 +727,32 @@ export default function GroupDetailScreen(): React.JSX.Element {
                         </Text>
                       ) : null}
                       <Text style={styles.taskAssignees}>
-                        👤 {task.assignedUserIds.length} Assigned
+                        👤 {task.assignedUserIds.length > 0
+                          ? task.assignedUserIds.map((uid) => getMemberDisplayName(uid)).join(', ')
+                          : 'Unassigned'}
                       </Text>
                     </View>
                   </View>
-                  {isCompleted ? (
-                    <View style={styles.rewardTag}>
-                      <Text style={styles.rewardTagText}>+10 🪙</Text>
-                    </View>
-                  ) : (
+
+                  <View style={styles.taskActionsRow}>
+                    {isCompleted ? (
+                      <View style={styles.rewardTag}>
+                        <Text style={styles.rewardTagText}>+10 🪙</Text>
+                      </View>
+                    ) : null}
                     <TouchableOpacity
-                      onPress={() =>
-                        deleteGroupTask.mutate({ taskId: task.id, groupId: group.id })
-                      }
+                      onPress={() => openEditTask(task)}
+                      style={styles.editTaskBtn}
+                    >
+                      <Text style={styles.editTaskBtnText}>✏️</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteTask(task.id, task.title)}
                       style={styles.deleteTaskBtn}
                     >
-                      <Text style={{ color: COLORS.text.muted, fontSize: 13 }}>✕</Text>
+                      <Text style={styles.deleteTaskBtnText}>✕</Text>
                     </TouchableOpacity>
-                  )}
+                  </View>
                 </View>
               );
             });
@@ -612,8 +784,8 @@ export default function GroupDetailScreen(): React.JSX.Element {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.memberName}>
-                  {m.userId === user?.id ? 'You' : `Member (${m.userId.slice(0, 8)}...)`}
-                  {m.userId === group.adminUserId ? ' (Admin / Creator)' : ''}
+                  {m.username || (m.userId === user?.id ? 'You' : `Member (${m.userId.slice(0, 8)})`)}
+                  {m.userId === group.adminUserId ? ' 👑 (Admin / Creator)' : ''}
                 </Text>
               </View>
               {isAdmin && m.userId !== group.adminUserId ? (
@@ -699,7 +871,7 @@ export default function GroupDetailScreen(): React.JSX.Element {
                     style={[styles.assigneeChip, isSelected && styles.assigneeChipActive]}
                   >
                     <Text style={[styles.assigneeChipText, isSelected && { color: '#fff', fontWeight: '700' }]}>
-                      {m.userId === user?.id ? 'Me' : m.userId.slice(0, 6)}
+                      {getMemberDisplayName(m.userId)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -729,6 +901,100 @@ export default function GroupDetailScreen(): React.JSX.Element {
                 setTaskDatePickerVisible(false);
               }}
               onClose={() => setTaskDatePickerVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Edit Task Modal ─────────────────────────────────────────────────── */}
+      <Modal visible={editTaskModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Group Subtask</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Task title"
+              placeholderTextColor={COLORS.text.muted}
+              value={editTaskTitle}
+              onChangeText={setEditTaskTitle}
+            />
+
+            {/* Target Date with Calendar Picker */}
+            <Text style={styles.modalLabel}>Target Date (Calendar Selection) *</Text>
+            <TouchableOpacity
+              style={[styles.modalInput, styles.calendarPickerRow]}
+              onPress={() => setEditTaskDatePickerVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 16 }}>📅</Text>
+              <Text style={styles.calendarPickerDateText}>
+                {editTaskTargetDate || 'Select Target Date'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Estimated Hours */}
+            <Text style={styles.modalLabel}>Estimated Hours</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 3"
+              placeholderTextColor={COLORS.text.muted}
+              value={editTaskEstHours}
+              onChangeText={setEditTaskEstHours}
+              keyboardType="numeric"
+            />
+
+            {/* Assignees (Multi-select) */}
+            <Text style={styles.modalLabel}>Assign Members (One or Many):</Text>
+            <View style={styles.assigneesRow}>
+              {approvedMembers.map((m) => {
+                const isSelected = editSelectedAssignees.includes(m.userId);
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    onPress={() => {
+                      if (isSelected) {
+                        setEditSelectedAssignees(editSelectedAssignees.filter((uid) => uid !== m.userId));
+                      } else {
+                        setEditSelectedAssignees([...editSelectedAssignees, m.userId]);
+                      }
+                    }}
+                    style={[styles.assigneeChip, isSelected && styles.assigneeChipActive]}
+                  >
+                    <Text style={[styles.assigneeChipText, isSelected && { color: '#fff', fontWeight: '700' }]}>
+                      {getMemberDisplayName(m.userId)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  setEditTaskModalVisible(false);
+                  setEditingTaskId(null);
+                }}
+                style={styles.modalCancelBtn}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSaveEditTask} style={styles.modalConfirmBtn}>
+                <Text style={styles.modalConfirmText}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Non-modal Date Picker overlay inside Edit Task Modal */}
+            <DatePickerModal
+              useNativeModal={false}
+              visible={editTaskDatePickerVisible}
+              title="Select Task Target Date"
+              initialDate={editTaskTargetDate}
+              onSelect={(d) => {
+                setEditTaskTargetDate(d);
+                setEditTaskDatePickerVisible(false);
+              }}
+              onClose={() => setEditTaskDatePickerVisible(false)}
             />
           </View>
         </View>
@@ -807,6 +1073,183 @@ export default function GroupDetailScreen(): React.JSX.Element {
                 setPhaseDatePickerVisible(false);
               }}
               onClose={() => setPhaseDatePickerVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Edit Group Assignment Modal ────────────────────────────────────── */}
+      <Modal visible={editGroupModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+            <Text style={styles.modalTitle}>Edit Group Assignment</Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              <Text style={styles.modalLabel}>Group Assignment Title *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. Software Engineering Capstone"
+                placeholderTextColor={COLORS.text.muted}
+                value={editGroupName}
+                onChangeText={setEditGroupName}
+              />
+
+              <Text style={styles.modalLabel}>Course / Module</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                {courses.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    onPress={() => setEditGroupCourseId(c.id)}
+                    style={[
+                      styles.chip,
+                      editGroupCourseId === c.id && styles.chipSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        editGroupCourseId === c.id && styles.chipTextSelected,
+                      ]}
+                    >
+                      {c.code}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.modalLabel}>Priority</Text>
+              <View style={styles.priorityRow}>
+                {(['low', 'medium', 'high'] as Priority[]).map((p) => {
+                  const isSelected = editGroupPriority === p;
+                  const color = PRIORITY_COLORS[p];
+                  return (
+                    <TouchableOpacity
+                      key={p}
+                      onPress={() => setEditGroupPriority(p)}
+                      style={[
+                        styles.prioritySelectBtn,
+                        isSelected && { backgroundColor: color, borderColor: color },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.prioritySelectBtnText,
+                          isSelected && { color: '#fff', fontWeight: '700' },
+                        ]}
+                      >
+                        {p.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.modalLabel}>Final Deadline</Text>
+              <TouchableOpacity
+                style={[styles.modalInput, styles.calendarPickerRow]}
+                onPress={() => setEditGroupDatePickerVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontSize: 16 }}>📅</Text>
+                <Text style={styles.calendarPickerDateText}>
+                  {editGroupDeadline || 'Select Deadline'}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalLabel}>Total Marks</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="e.g. 100"
+                    placeholderTextColor={COLORS.text.muted}
+                    value={editGroupTotalMarks}
+                    onChangeText={setEditGroupTotalMarks}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalLabel}>Est. Total Hours</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="e.g. 30"
+                    placeholderTextColor={COLORS.text.muted}
+                    value={editGroupEstimatedHours}
+                    onChangeText={setEditGroupEstimatedHours}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalLabel}>Est. Days</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="e.g. 14"
+                    placeholderTextColor={COLORS.text.muted}
+                    value={editGroupEstimatedDays}
+                    onChangeText={setEditGroupEstimatedDays}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalLabel}>Hours Per Day</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="e.g. 2"
+                    placeholderTextColor={COLORS.text.muted}
+                    value={editGroupHoursPerDay}
+                    onChangeText={setEditGroupHoursPerDay}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.modalLabel}>Description / Notes</Text>
+              <TextInput
+                style={[styles.modalInput, { height: 70, textAlignVertical: 'top' }]}
+                placeholder="Project guidelines, group instructions..."
+                placeholderTextColor={COLORS.text.muted}
+                value={editGroupDescription}
+                onChangeText={setEditGroupDescription}
+                multiline
+              />
+
+              <Text style={[styles.modalLabel, { marginTop: 14 }]}>
+                📎 File & Image Attachments (PDF, Documents, Camera, Gallery)
+              </Text>
+              <AttachmentPicker
+                attachments={editGroupAttachments}
+                onChange={setEditGroupAttachments}
+                editable={true}
+              />
+
+              <View style={styles.modalBtnRow}>
+                <TouchableOpacity
+                  onPress={() => setEditGroupModalVisible(false)}
+                  style={styles.modalCancelBtn}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSaveEditGroup}
+                  style={styles.modalConfirmBtn}
+                >
+                  <Text style={styles.modalConfirmText}>Save Changes</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            <DatePickerModal
+              useNativeModal={false}
+              visible={editGroupDatePickerVisible}
+              title="Select Group Deadline"
+              initialDate={editGroupDeadline}
+              onSelect={(d) => {
+                setEditGroupDeadline(d);
+                setEditGroupDatePickerVisible(false);
+              }}
+              onClose={() => setEditGroupDatePickerVisible(false)}
             />
           </View>
         </View>
@@ -971,8 +1414,20 @@ const styles = StyleSheet.create({
   taskTitleDone: { textDecorationLine: 'line-through', color: COLORS.text.muted },
   taskMetaRow: { flexDirection: 'row', gap: 10, marginTop: 2 },
   taskDate: { fontSize: 11, color: COLORS.text.secondary },
-  taskAssignees: { fontSize: 11, color: COLORS.text.secondary },
-  deleteTaskBtn: { padding: 4 },
+  taskAssignees: { fontSize: 11, color: COLORS.text.secondary, maxWidth: 180 },
+  taskActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  editTaskBtn: {
+    padding: 5,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+  },
+  editTaskBtnText: { fontSize: 12 },
+  deleteTaskBtn: {
+    padding: 5,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+  },
+  deleteTaskBtnText: { fontSize: 12, color: COLORS.status.error, fontWeight: '700' },
   rewardTag: {
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
@@ -1060,4 +1515,84 @@ const styles = StyleSheet.create({
   modalCancelText: { fontSize: 14, color: COLORS.text.secondary, fontWeight: '600' },
   modalConfirmBtn: { backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
   modalConfirmText: { fontSize: 14, color: '#fff', fontWeight: '700' },
+  editHeaderBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  editHeaderBtnText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  groupAttachmentsSection: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  groupAttachmentsTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  manageAttachBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
+  },
+  manageAttachBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    marginVertical: 6,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  chipSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.text.secondary,
+  },
+  chipTextSelected: {
+    color: '#fff',
+  },
+  priorityRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 4,
+  },
+  prioritySelectBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#F8FAFC',
+  },
+  prioritySelectBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.text.secondary,
+  },
 });

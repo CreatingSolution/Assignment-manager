@@ -18,7 +18,8 @@ import { COLORS, PRIORITY_COLORS } from '../../../constants';
 import { useCreateGroup } from '../../../hooks/use-groups.hook';
 import { useCourses, useCreateCourse } from '../../../hooks/use-courses.hook';
 import { DatePickerModal } from '../../../components/DatePickerModal';
-import type { Priority } from '../../../types';
+import { AttachmentPicker } from '../../../components/AttachmentPicker';
+import type { AttachmentItem, Priority } from '../../../types';
 
 interface SubtaskDraft {
   title: string;
@@ -43,6 +44,7 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
   const [totalMarks, setTotalMarks] = useState('');
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
 
   // Course Mode
   const [courseMode, setCourseMode] = useState<'existing' | 'new'>(
@@ -182,6 +184,7 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
         estimatedHours: isNaN(estHoursNum ?? NaN) ? undefined : estHoursNum,
         estimatedDays: isNaN(estDaysNum ?? NaN) ? undefined : estDaysNum,
         hoursPerDay: isNaN(hpdNum ?? NaN) ? undefined : hpdNum,
+        attachments: attachments.length > 0 ? attachments : undefined,
         submissions:
           structureMode === 'phased'
             ? phasedSubmissions.filter((s) => s.title.trim().length > 0)
@@ -414,6 +417,16 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
               </View>
             </View>
           </View>
+
+          {/* Attachments & Files */}
+          <Text style={styles.fieldLabel}>
+            📎 Attachments & Documents (PDF, Word, Camera, Gallery)
+          </Text>
+          <AttachmentPicker
+            attachments={attachments}
+            onChange={setAttachments}
+            editable={true}
+          />
 
           {/* ─── Task & Deadline Structure (Ex 1 vs Ex 2) ────────────────────────── */}
           <View style={styles.sectionDivider} />

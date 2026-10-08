@@ -305,6 +305,62 @@ export function useDeleteAssignment() {
   });
 }
 
+export function useCreateTask() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const repo = getTaskRepository();
+
+  return useMutation({
+    mutationFn: async ({
+      assignmentId,
+      submissionId,
+      title,
+      targetDate,
+      estimatedHours,
+    }: {
+      assignmentId: string;
+      submissionId?: string;
+      title: string;
+      targetDate?: string;
+      estimatedHours?: number;
+    }): Promise<Task> => {
+      if (!user?.id) throw new Error('Not authenticated');
+
+      const existingTasks = repo.findByAssignment(assignmentId);
+      const nextOrder = existingTasks.length;
+
+      const created = repo.create({
+        assignmentId,
+        submissionId,
+        userId: user.id,
+        title: title.trim(),
+        targetDate,
+        estimatedHours,
+        status: 'pending',
+        orderIndex: nextOrder,
+      });
+
+      enqueueOperation({
+        userId: user.id,
+        entityType: 'task',
+        entityId: created.id,
+        operation: 'CREATE',
+        payload: created,
+      });
+
+      return created;
+    },
+    onSuccess: (data) => {
+      if (data) {
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.tasks(data.assignmentId) });
+        if (user?.id) {
+          void queryClient.invalidateQueries({ queryKey: assignmentKeys.byUser(user.id) });
+        }
+      }
+    },
+  });
+}
+
 export function useToggleTaskStatus() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -333,6 +389,131 @@ export function useToggleTaskStatus() {
         if (user?.id) {
           void queryClient.invalidateQueries({ queryKey: assignmentKeys.byUser(user.id) });
         }
+      }
+    },
+  });
+}
+
+export function useUpdateTask() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const repo = getTaskRepository();
+
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      updates,
+    }: {
+      taskId: string;
+      updates: {
+        title?: string;
+        targetDate?: string;
+        estimatedHours?: number;
+      };
+    }): Promise<Task | null> => {
+      if (!user?.id) throw new Error('Not authenticated');
+
+      const updated = repo.update(taskId, updates);
+      if (updated) {
+        enqueueOperation({
+          userId: user.id,
+          entityType: 'task',
+          entityId: taskId,
+          operation: 'UPDATE',
+          payload: updated,
+        });
+      }
+      return updated;
+    },
+    onSuccess: (data) => {
+      if (data) {
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.tasks(data.assignmentId) });
+        if (user?.id) {
+          void queryClient.invalidateQueries({ queryKey: assignmentKeys.byUser(user.id) });
+        }
+      }
+    },
+  });
+}
+
+export function useDeleteTask() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const repo = getTaskRepository();
+
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      assignmentId,
+    }: {
+      taskId: string;
+      assignmentId: string;
+    }): Promise<boolean> => {
+      if (!user?.id) throw new Error('Not authenticated');
+
+      const success = repo.softDelete(taskId);
+      if (success) {
+        enqueueOperation({
+          userId: user.id,
+          entityType: 'task',
+          entityId: taskId,
+          operation: 'DELETE',
+          payload: { id: taskId },
+        });
+      }
+      return success;
+    },
+    onSuccess: (_data, { assignmentId }) => {
+      void queryClient.invalidateQueries({ queryKey: assignmentKeys.tasks(assignmentId) });
+      if (user?.id) {
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.byUser(user.id) });
+      }
+    },
+  });
+}
+
+export function useUpdateSubmission() {
+  const queryClient = useQueryClient();
+  const subRepo = getSubmissionRepository();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      assignmentId: _aid,
+      updates,
+    }: {
+      id: string;
+      assignmentId?: string;
+      updates: { title?: string; deadline?: string };
+    }): Promise<Submission | null> => {
+      return subRepo.update(id, updates);
+    },
+    onSuccess: (_data, { assignmentId }) => {
+      if (assignmentId) {
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.submissions(assignmentId) });
+      }
+    },
+  });
+}
+
+export function useDeleteSubmission() {
+  const queryClient = useQueryClient();
+  const subRepo = getSubmissionRepository();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      assignmentId: _aid,
+    }: {
+      id: string;
+      assignmentId?: string;
+    }): Promise<boolean> => {
+      return subRepo.delete(id);
+    },
+    onSuccess: (_data, { assignmentId }) => {
+      if (assignmentId) {
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.submissions(assignmentId) });
+        void queryClient.invalidateQueries({ queryKey: assignmentKeys.tasks(assignmentId) });
       }
     },
   });

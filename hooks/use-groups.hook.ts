@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getGroupRepository, getSubmissionRepository } from '../database';
-import type { Priority } from '../types';
+import type { AttachmentItem, Priority } from '../types';
+import type { UpdateGroupInput } from '../database/repositories/group.repository';
 import { useRewardsStore } from '../store/rewards.store';
 import { useAuth } from './use-auth.hook';
 
@@ -78,6 +79,7 @@ export interface CreateGroupPayload {
   estimatedHours?: number;
   estimatedDays?: number;
   hoursPerDay?: number;
+  attachments?: AttachmentItem[];
   submissions?: Array<{
     title: string;
     deadline: string;
@@ -104,19 +106,25 @@ export function useCreateGroup() {
     mutationFn: async (payload: CreateGroupPayload) => {
       if (!user?.id) throw new Error('Not authenticated');
 
-      const created = groupRepo.create({
-        name: payload.name,
-        adminUserId: user.id,
-        assignmentId: payload.assignmentId,
-        courseId: payload.courseId,
-        description: payload.description,
-        deadline: payload.deadline,
-        priority: payload.priority,
-        totalMarks: payload.totalMarks,
-        estimatedHours: payload.estimatedHours,
-        estimatedDays: payload.estimatedDays,
-        hoursPerDay: payload.hoursPerDay,
-      });
+      const created = groupRepo.create(
+        {
+          name: payload.name,
+          adminUserId: user.id,
+          assignmentId: payload.assignmentId,
+          courseId: payload.courseId,
+          description: payload.description,
+          deadline: payload.deadline,
+          priority: payload.priority,
+          totalMarks: payload.totalMarks,
+          estimatedHours: payload.estimatedHours,
+          estimatedDays: payload.estimatedDays,
+          hoursPerDay: payload.hoursPerDay,
+          attachments: payload.attachments,
+        },
+        user.id,
+        payload.assignmentId,
+        user.username
+      );
 
       // If phased submissions are provided (Ex 2)
       if (payload.submissions && payload.submissions.length > 0) {
@@ -181,7 +189,7 @@ export function useJoinGroup() {
       if (!user?.id) throw new Error('Not authenticated');
       const group = repo.findByAccessToken(accessToken);
       if (!group) throw new Error('Invalid 6-digit access token. Group not found.');
-      return repo.requestJoin(group.id, user.id);
+      return repo.requestJoin(group.id, user.id, user.username);
     },
     onSuccess: () => {
       if (user?.id) {
@@ -196,8 +204,16 @@ export function useAddGroupMember() {
   const repo = getGroupRepository();
 
   return useMutation({
-    mutationFn: async ({ groupId, userId }: { groupId: string; userId: string }) => {
-      return repo.addMember(groupId, userId, 'approved');
+    mutationFn: async ({
+      groupId,
+      userId,
+      username,
+    }: {
+      groupId: string;
+      userId: string;
+      username?: string;
+    }) => {
+      return repo.addMember(groupId, userId, 'approved', username);
     },
     onSuccess: (_data, { groupId }) => {
       void queryClient.invalidateQueries({ queryKey: groupKeys.members(groupId) });
@@ -325,6 +341,35 @@ export function useCreateGroupTask() {
   });
 }
 
+export function useUpdateGroupTask() {
+  const queryClient = useQueryClient();
+  const repo = getGroupRepository();
+
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      groupId,
+      updates,
+    }: {
+      taskId: string;
+      groupId: string;
+      updates: {
+        title?: string;
+        description?: string;
+        targetDate?: string;
+        estimatedHours?: number;
+        assignedUserIds?: string[];
+        submissionId?: string | null;
+      };
+    }) => {
+      return repo.updateGroupTask(taskId, updates);
+    },
+    onSuccess: (_data, { groupId }) => {
+      void queryClient.invalidateQueries({ queryKey: groupKeys.tasks(groupId) });
+    },
+  });
+}
+
 export function useDeleteGroupTask() {
   const queryClient = useQueryClient();
   const repo = getGroupRepository();
@@ -358,6 +403,28 @@ export function useCompleteGroupTask() {
     },
     onSuccess: (_data, { groupId }) => {
       void queryClient.invalidateQueries({ queryKey: groupKeys.tasks(groupId) });
+    },
+  });
+}
+
+export function useUpdateGroup() {
+  const queryClient = useQueryClient();
+  const repo = getGroupRepository();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      updates,
+    }: {
+      id: string;
+      updates: UpdateGroupInput;
+    }) => {
+      const updated = repo.update(id, updates);
+      return updated;
+    },
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: groupKeys.byId(id) });
+      void queryClient.invalidateQueries({ queryKey: groupKeys.all });
     },
   });
 }

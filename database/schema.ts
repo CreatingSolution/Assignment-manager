@@ -35,6 +35,7 @@ export const SQL_CREATE_ASSIGNMENTS = `
     estimated_days   REAL,
     hours_per_day    REAL,
     status           TEXT    NOT NULL DEFAULT 'pending',
+    attachments      TEXT,
     created_at       INTEGER NOT NULL,
     updated_at       INTEGER NOT NULL,
     is_synced        INTEGER NOT NULL DEFAULT 0,
@@ -92,9 +93,21 @@ export const SQL_CREATE_GROUPS = `
     estimated_hours REAL,
     estimated_days  REAL,
     hours_per_day   REAL,
+    attachments     TEXT,
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL,
     is_synced       INTEGER NOT NULL DEFAULT 0
+  )
+`;
+
+export const SQL_CREATE_USERS = `
+  CREATE TABLE IF NOT EXISTS users (
+    id           TEXT    NOT NULL PRIMARY KEY,
+    username     TEXT    NOT NULL UNIQUE,
+    email        TEXT    NOT NULL,
+    name         TEXT,
+    avatar_color TEXT    NOT NULL DEFAULT '#3B82F6',
+    created_at   INTEGER NOT NULL
   )
 `;
 
@@ -103,6 +116,7 @@ export const SQL_CREATE_GROUP_MEMBERS = `
     id         TEXT    NOT NULL PRIMARY KEY,
     group_id   TEXT    NOT NULL,
     user_id    TEXT    NOT NULL,
+    username   TEXT,
     status     TEXT    NOT NULL DEFAULT 'pending',
     joined_at  INTEGER,
     FOREIGN KEY (group_id) REFERENCES groups(id)
@@ -186,12 +200,14 @@ export const SQL_INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)`,
   `CREATE INDEX IF NOT EXISTS idx_calendar_events_user_id ON calendar_events(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
 ];
 
 /**
  * Ordered list of all CREATE TABLE statements for the migration runner.
  */
 export const ALL_CREATE_TABLES = [
+  SQL_CREATE_USERS,
   SQL_CREATE_COURSES,
   SQL_CREATE_ASSIGNMENTS,
   SQL_CREATE_SUBMISSIONS,

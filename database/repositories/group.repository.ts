@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Group, GroupMember, GroupTask, Priority, TaskStatus } from '../../types';
+import type { AttachmentItem, Group, GroupMember, GroupTask, Priority, TaskStatus } from '../../types';
 import { generateId } from '../../utils/id.utils';
 
 export interface GroupWithMeta extends Group {
@@ -24,6 +24,20 @@ export interface CreateGroupInput {
   estimatedHours?: number;
   estimatedDays?: number;
   hoursPerDay?: number;
+  attachments?: AttachmentItem[];
+}
+
+export interface UpdateGroupInput {
+  name?: string;
+  courseId?: string;
+  description?: string;
+  deadline?: string;
+  priority?: Priority;
+  totalMarks?: number;
+  estimatedHours?: number;
+  estimatedDays?: number;
+  hoursPerDay?: number;
+  attachments?: AttachmentItem[];
 }
 
 export interface CreateGroupTaskInput {
@@ -35,6 +49,16 @@ export interface CreateGroupTaskInput {
   estimatedHours?: number;
   createdByUserId: string;
   assignedUserIds: string[];
+}
+
+export interface UpdateGroupTaskInput {
+  title?: string;
+  description?: string;
+  targetDate?: string;
+  estimatedHours?: number;
+  assignedUserIds?: string[];
+  submissionId?: string | null;
+  status?: TaskStatus;
 }
 
 interface GroupRow {
@@ -51,6 +75,7 @@ interface GroupRow {
   estimated_hours: number | null;
   estimated_days: number | null;
   hours_per_day: number | null;
+  attachments: string | null;
   created_at: number;
   updated_at: number;
   is_synced: number;
@@ -59,6 +84,15 @@ interface GroupRow {
 }
 
 function mapGroupRow(row: GroupRow): Group {
+  let parsedAttachments: AttachmentItem[] | undefined = undefined;
+  if (row.attachments) {
+    try {
+      parsedAttachments = JSON.parse(row.attachments);
+    } catch {
+      parsedAttachments = undefined;
+    }
+  }
+
   return {
     id: row.id,
     name: row.name,
@@ -73,6 +107,7 @@ function mapGroupRow(row: GroupRow): Group {
     estimatedHours: row.estimated_hours ?? undefined,
     estimatedDays: row.estimated_days ?? undefined,
     hoursPerDay: row.hours_per_day ?? undefined,
+    attachments: parsedAttachments,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     isSynced: row.is_synced === 1,
@@ -117,7 +152,12 @@ export class GroupRepository {
     return mapGroupRow(row);
   }
 
-  create(inputOrName: string | CreateGroupInput, adminUserId?: string, assignmentId?: string): Group {
+  create(
+    inputOrName: string | CreateGroupInput,
+    adminUserId?: string,
+    assignmentId?: string,
+    adminUsername?: string
+  ): Group {
     const input: CreateGroupInput =
       typeof inputOrName === 'string'
         ? { name: inputOrName, adminUserId: adminUserId!, assignmentId }
@@ -128,14 +168,21 @@ export class GroupRepository {
     const accessToken = String(Math.floor(100000 + Math.random() * 900000));
     const now = Date.now();
 
+    // Look up username if not provided
+    let resolvedUsername = adminUsername;
+    if (!resolvedUsername) {
+      const u = this.db.getFirstSync<{ username: string }>('SELECT username FROM users WHERE id = ?', [input.adminUserId]);
+      if (u) resolvedUsername = u.username;
+    }
+
     this.db.withTransactionSync(() => {
       this.db.runSync(
         `INSERT INTO groups (
           id, name, access_token, admin_user_id, assignment_id, course_id, description,
-          deadline, priority, total_marks, estimated_hours, estimated_days, hours_per_day,
+          deadline, priority, total_marks, estimated_hours, estimated_days, hours_per_day, attachments,
           created_at, updated_at, is_synced
         )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
         [
           id,
           input.name.trim(),
@@ -150,23 +197,67 @@ export class GroupRepository {
           input.estimatedHours ?? null,
           input.estimatedDays ?? null,
           input.hoursPerDay ?? null,
+          input.attachments && input.attachments.length > 0 ? JSON.stringify(input.attachments) : null,
           now,
           now,
         ]
       );
 
-      // Admin is automatically an approved member
+      // Admin is automatically an approved member with username
       this.db.runSync(
-        `INSERT INTO group_members (id, group_id, user_id, status, joined_at)
-         VALUES (?, ?, ?, 'approved', ?)`,
-        [generateId(), id, input.adminUserId, now]
+        `INSERT INTO group_members (id, group_id, user_id, username, status, joined_at)
+         VALUES (?, ?, ?, ?, 'approved', ?)`,
+        [generateId(), id, input.adminUserId, resolvedUsername ?? null, now]
       );
     });
 
     return this.findById(id)!;
   }
 
-  requestJoin(groupId: string, userId: string): { success: boolean; message: string } {
+  update(id: string, updates: UpdateGroupInput): Group | null {
+    const current = this.findById(id);
+    if (!current) return null;
+    const now = Date.now();
+
+    const updatedAttachments = updates.attachments !== undefined
+      ? (updates.attachments && updates.attachments.length > 0 ? JSON.stringify(updates.attachments) : null)
+      : (current.attachments && current.attachments.length > 0 ? JSON.stringify(current.attachments) : null);
+
+    this.db.runSync(
+      `UPDATE groups SET
+        name            = ?,
+        course_id       = ?,
+        description     = ?,
+        deadline        = ?,
+        priority        = ?,
+        total_marks     = ?,
+        estimated_hours = ?,
+        estimated_days  = ?,
+        hours_per_day   = ?,
+        attachments     = ?,
+        updated_at      = ?,
+        is_synced       = 0
+       WHERE id = ?`,
+      [
+        updates.name !== undefined ? updates.name.trim() : current.name,
+        updates.courseId !== undefined ? (updates.courseId || null) : (current.courseId || null),
+        updates.description !== undefined ? (updates.description || null) : (current.description || null),
+        updates.deadline !== undefined ? (updates.deadline || null) : (current.deadline || null),
+        (updates.priority !== undefined ? updates.priority : current.priority) ?? 'medium',
+        updates.totalMarks !== undefined ? updates.totalMarks : (current.totalMarks ?? null),
+        updates.estimatedHours !== undefined ? updates.estimatedHours : (current.estimatedHours ?? null),
+        updates.estimatedDays !== undefined ? updates.estimatedDays : (current.estimatedDays ?? null),
+        updates.hoursPerDay !== undefined ? updates.hoursPerDay : (current.hoursPerDay ?? null),
+        updatedAttachments,
+        now,
+        id,
+      ]
+    );
+
+    return this.findById(id);
+  }
+
+  requestJoin(groupId: string, userId: string, username?: string): { success: boolean; message: string } {
     const group = this.findById(groupId);
     if (!group) return { success: false, message: 'Group not found.' };
 
@@ -184,33 +275,53 @@ export class GroupRepository {
       }
     }
 
+    let resolvedUsername = username;
+    if (!resolvedUsername) {
+      const u = this.db.getFirstSync<{ username: string }>('SELECT username FROM users WHERE id = ?', [userId]);
+      if (u) resolvedUsername = u.username;
+    }
+
     this.db.runSync(
-      `INSERT INTO group_members (id, group_id, user_id, status, joined_at)
-       VALUES (?, ?, ?, 'pending', ?)`,
-      [generateId(), groupId, userId, Date.now()]
+      `INSERT INTO group_members (id, group_id, user_id, username, status, joined_at)
+       VALUES (?, ?, ?, ?, 'pending', ?)`,
+      [generateId(), groupId, userId, resolvedUsername ?? null, Date.now()]
     );
 
     return { success: true, message: 'Join request sent! Waiting for Admin approval.' };
   }
 
-  addMember(groupId: string, userId: string, status: 'approved' | 'pending' = 'approved'): boolean {
+  addMember(
+    groupId: string,
+    userId: string,
+    status: 'approved' | 'pending' = 'approved',
+    username?: string
+  ): boolean {
     const existing = this.db.getFirstSync<{ id: string; status: string }>(
       'SELECT id, status FROM group_members WHERE group_id = ? AND user_id = ?',
       [groupId, userId]
     );
 
+    let resolvedUsername = username;
+    if (!resolvedUsername) {
+      const u = this.db.getFirstSync<{ username: string }>('SELECT username FROM users WHERE id = ?', [userId]);
+      if (u) resolvedUsername = u.username;
+    }
+
     if (existing) {
       if (existing.status !== status) {
-        this.db.runSync('UPDATE group_members SET status = ? WHERE id = ?', [status, existing.id]);
+        this.db.runSync(
+          'UPDATE group_members SET status = ?, username = COALESCE(?, username) WHERE id = ?',
+          [status, resolvedUsername ?? null, existing.id]
+        );
         return true;
       }
       return false;
     }
 
     this.db.runSync(
-      `INSERT INTO group_members (id, group_id, user_id, status, joined_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [generateId(), groupId, userId, status, Date.now()]
+      `INSERT INTO group_members (id, group_id, user_id, username, status, joined_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [generateId(), groupId, userId, resolvedUsername ?? null, status, Date.now()]
     );
     return true;
   }
@@ -220,14 +331,23 @@ export class GroupRepository {
       id: string;
       group_id: string;
       user_id: string;
+      username: string | null;
       status: string;
       joined_at: number | null;
-    }>('SELECT * FROM group_members WHERE group_id = ? ORDER BY joined_at ASC', [groupId]);
+    }>(
+      `SELECT gm.id, gm.group_id, gm.user_id, COALESCE(gm.username, u.username) as username, gm.status, gm.joined_at
+       FROM group_members gm
+       LEFT JOIN users u ON u.id = gm.user_id
+       WHERE gm.group_id = ?
+       ORDER BY gm.joined_at ASC`,
+      [groupId]
+    );
 
     return rows.map((r) => ({
       id: r.id,
       groupId: r.group_id,
       userId: r.user_id,
+      username: r.username ?? undefined,
       status: r.status as GroupMember['status'],
       joinedAt: r.joined_at ?? undefined,
     }));
@@ -401,6 +521,50 @@ export class GroupRepository {
       isSynced: t.is_synced === 1,
       assignedUserIds: assignees.map((a) => a.user_id),
     };
+  }
+
+  updateGroupTask(taskId: string, input: UpdateGroupTaskInput): EnrichedGroupTask | null {
+    const existing = this.getGroupTaskById(taskId);
+    if (!existing) return null;
+
+    const now = Date.now();
+
+    this.db.withTransactionSync(() => {
+      this.db.runSync(
+        `UPDATE group_tasks SET
+          title = ?,
+          description = ?,
+          target_date = ?,
+          estimated_hours = ?,
+          submission_id = ?,
+          status = ?,
+          updated_at = ?,
+          is_synced = 0
+         WHERE id = ?`,
+        [
+          input.title !== undefined ? input.title.trim() : existing.title,
+          input.description !== undefined ? input.description : (existing.description ?? null),
+          input.targetDate !== undefined ? input.targetDate : (existing.targetDate ?? null),
+          input.estimatedHours !== undefined ? input.estimatedHours : (existing.estimatedHours ?? null),
+          input.submissionId !== undefined ? input.submissionId : (existing.submissionId ?? null),
+          input.status !== undefined ? input.status : existing.status,
+          now,
+          taskId,
+        ]
+      );
+
+      if (input.assignedUserIds !== undefined) {
+        this.db.runSync('DELETE FROM group_task_assignees WHERE group_task_id = ?', [taskId]);
+        for (const uid of input.assignedUserIds) {
+          this.db.runSync(
+            `INSERT INTO group_task_assignees (id, group_task_id, user_id) VALUES (?, ?, ?)`,
+            [generateId(), taskId, uid]
+          );
+        }
+      }
+    });
+
+    return this.getGroupTaskById(taskId);
   }
 
   deleteGroupTask(taskId: string): boolean {
