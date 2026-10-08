@@ -45,7 +45,9 @@ export interface Assignment {
   priority: Priority;
   totalMarks?: number;
   deadline: string;          // ISO 8601 string
-  estimatedHours?: number;
+  estimatedHours?: number;   // total workload hours
+  estimatedDays?: number;    // estimated days planned for this assignment
+  hoursPerDay?: number;      // estimated hours per day
   status: AssignmentStatus;
   createdAt: number;
   updatedAt: number;

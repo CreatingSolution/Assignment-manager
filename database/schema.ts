@@ -32,6 +32,8 @@ export const SQL_CREATE_ASSIGNMENTS = `
     total_marks      REAL,
     deadline         TEXT    NOT NULL,
     estimated_hours  REAL,
+    estimated_days   REAL,
+    hours_per_day    REAL,
     status           TEXT    NOT NULL DEFAULT 'pending',
     created_at       INTEGER NOT NULL,
     updated_at       INTEGER NOT NULL,

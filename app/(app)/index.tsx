@@ -100,7 +100,12 @@ function AssignmentCard({ assignment, courseName, onPress }: AssignmentCardProps
         <View style={styles.metaRow}>
           {assignment.estimatedHours ? (
             <View style={styles.metaChip}>
-              <Text style={styles.metaChipText}>⏱️ {assignment.estimatedHours}h plan</Text>
+              <Text style={styles.metaChipText}>
+                ⏱️ {assignment.estimatedHours}h
+                {assignment.estimatedDays
+                  ? ` (${assignment.estimatedDays}d @ ${assignment.hoursPerDay || 2}h/d)`
+                  : ' plan'}
+              </Text>
             </View>
           ) : null}
           {assignment.totalMarks ? (

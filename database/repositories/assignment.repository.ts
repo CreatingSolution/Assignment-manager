@@ -13,6 +13,8 @@ interface AssignmentRow {
   total_marks: number | null;
   deadline: string;
   estimated_hours: number | null;
+  estimated_days: number | null;
+  hours_per_day: number | null;
   status: string;
   created_at: number;
   updated_at: number;
@@ -32,6 +34,8 @@ function mapRow(row: AssignmentRow): Assignment {
     totalMarks: row.total_marks ?? undefined,
     deadline: row.deadline,
     estimatedHours: row.estimated_hours ?? undefined,
+    estimatedDays: row.estimated_days ?? undefined,
+    hoursPerDay: row.hours_per_day ?? undefined,
     status: row.status as Assignment['status'],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -77,9 +81,9 @@ export class AssignmentRepository {
     this.db.runSync(
       `INSERT INTO assignments
          (id, user_id, course_id, title, description, source_url, priority,
-          total_marks, deadline, estimated_hours, status,
+          total_marks, deadline, estimated_hours, estimated_days, hours_per_day, status,
           created_at, updated_at, is_synced, is_deleted)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
       [
         id,
         input.userId,
@@ -91,6 +95,8 @@ export class AssignmentRepository {
         input.totalMarks ?? null,
         input.deadline,
         input.estimatedHours ?? null,
+        input.estimatedDays ?? null,
+        input.hoursPerDay ?? null,
         input.status,
         now,
         now,
@@ -113,6 +119,8 @@ export class AssignmentRepository {
         total_marks     = ?,
         deadline        = ?,
         estimated_hours = ?,
+        estimated_days  = ?,
+        hours_per_day   = ?,
         status          = ?,
         updated_at      = ?,
         is_synced       = 0
@@ -126,6 +134,8 @@ export class AssignmentRepository {
         updates.totalMarks ?? current.totalMarks ?? null,
         updates.deadline ?? current.deadline,
         updates.estimatedHours ?? current.estimatedHours ?? null,
+        updates.estimatedDays ?? current.estimatedDays ?? null,
+        updates.hoursPerDay ?? current.hoursPerDay ?? null,
         updates.status ?? current.status,
         now,
         id,
@@ -188,6 +198,8 @@ export class AssignmentRepository {
           total_marks     = ?,
           deadline        = ?,
           estimated_hours = ?,
+          estimated_days  = ?,
+          hours_per_day   = ?,
           status          = ?,
           created_at      = ?,
           updated_at      = ?,
@@ -204,6 +216,8 @@ export class AssignmentRepository {
           assignment.totalMarks ?? null,
           assignment.deadline,
           assignment.estimatedHours ?? null,
+          assignment.estimatedDays ?? null,
+          assignment.hoursPerDay ?? null,
           assignment.status,
           assignment.createdAt,
           assignment.updatedAt,
@@ -215,9 +229,9 @@ export class AssignmentRepository {
       this.db.runSync(
         `INSERT INTO assignments
            (id, user_id, course_id, title, description, source_url, priority,
-            total_marks, deadline, estimated_hours, status,
+            total_marks, deadline, estimated_hours, estimated_days, hours_per_day, status,
             created_at, updated_at, is_synced, is_deleted)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
         [
           assignment.id,
           assignment.userId,
@@ -229,6 +243,8 @@ export class AssignmentRepository {
           assignment.totalMarks ?? null,
           assignment.deadline,
           assignment.estimatedHours ?? null,
+          assignment.estimatedDays ?? null,
+          assignment.hoursPerDay ?? null,
           assignment.status,
           assignment.createdAt,
           assignment.updatedAt,

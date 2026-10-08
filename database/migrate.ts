@@ -22,6 +22,8 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
       { name: 'priority', type: "TEXT NOT NULL DEFAULT 'medium'" },
       { name: 'total_marks', type: 'REAL' },
       { name: 'estimated_hours', type: 'REAL' },
+      { name: 'estimated_days', type: 'REAL' },
+      { name: 'hours_per_day', type: 'REAL' },
       { name: 'status', type: "TEXT NOT NULL DEFAULT 'pending'" },
       { name: 'is_synced', type: 'INTEGER NOT NULL DEFAULT 0' },
       { name: 'is_deleted', type: 'INTEGER NOT NULL DEFAULT 0' },

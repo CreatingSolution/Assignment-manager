@@ -25,6 +25,7 @@ import {
   useManageGroupMember,
 } from '../../../hooks/use-groups.hook';
 import { useRewardsStore } from '../../../store/rewards.store';
+import { DatePickerModal } from '../../../components/DatePickerModal';
 
 export default function GroupDetailScreen(): React.JSX.Element {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -50,6 +51,7 @@ export default function GroupDetailScreen(): React.JSX.Element {
     return d.toISOString().split('T')[0];
   });
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  const [calendarPickerVisible, setCalendarPickerVisible] = useState(false);
 
   if (isLoading || !group) {
     return (
@@ -341,14 +343,17 @@ export default function GroupDetailScreen(): React.JSX.Element {
               value={taskTitle}
               onChangeText={setTaskTitle}
             />
-            <Text style={styles.modalLabel}>Target Date (YYYY-MM-DD):</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={COLORS.text.muted}
-              value={taskTargetDate}
-              onChangeText={setTaskTargetDate}
-            />
+            <Text style={styles.modalLabel}>Target Date (Tap to select) *</Text>
+            <TouchableOpacity
+              style={[styles.modalInput, styles.calendarPickerRow]}
+              onPress={() => setCalendarPickerVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 16 }}>📅</Text>
+              <Text style={styles.calendarPickerDateText}>
+                {taskTargetDate || 'Select Target Date'}
+              </Text>
+            </TouchableOpacity>
 
             <Text style={styles.modalLabel}>Assign Members:</Text>
             <View style={styles.assigneesRow}>
@@ -388,6 +393,14 @@ export default function GroupDetailScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
+
+      <DatePickerModal
+        visible={calendarPickerVisible}
+        title="Select Subtask Target Date"
+        initialDate={taskTargetDate}
+        onSelect={(d) => setTaskTargetDate(d)}
+        onClose={() => setCalendarPickerVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -564,6 +577,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     marginBottom: 12,
+    color: COLORS.text.primary,
+  },
+  calendarPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+  },
+  calendarPickerDateText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: COLORS.text.primary,
   },
   assigneesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 },

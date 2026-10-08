@@ -141,7 +141,9 @@ export default function AssignmentDetailScreen(): React.JSX.Element {
               <View style={styles.metricItem}>
                 <Text style={styles.metricLabel}>EST. TIME</Text>
                 <Text style={styles.metricValue}>
-                  {assignment.estimatedHours ? `${assignment.estimatedHours} hrs` : 'Flexible'}
+                  {assignment.estimatedHours
+                    ? `${assignment.estimatedHours} hrs${assignment.estimatedDays ? ` (${assignment.estimatedDays}d)` : ''}`
+                    : 'Flexible'}
                 </Text>
               </View>
               <View style={styles.metricDivider} />
