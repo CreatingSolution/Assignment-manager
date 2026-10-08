@@ -309,29 +309,53 @@ export async function syncSubmissionToFirestore(
   submission: Submission
 ): Promise<void> {
   const db = getDb();
-  const subRef = doc(
-    db,
-    'users',
-    userId,
-    'assignments',
-    submission.assignmentId,
-    'submissions',
-    submission.id
-  );
-  await setDoc(
-    subRef,
-    {
-      id: submission.id,
-      assignmentId: submission.assignmentId,
-      userId: submission.userId,
-      title: submission.title,
-      deadline: submission.deadline,
-      createdAt: submission.createdAt,
-      updatedAt: submission.updatedAt,
-      serverUpdatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+  if (submission.assignmentId) {
+    const subRef = doc(
+      db,
+      'users',
+      userId,
+      'assignments',
+      submission.assignmentId,
+      'submissions',
+      submission.id
+    );
+    await setDoc(
+      subRef,
+      {
+        id: submission.id,
+        assignmentId: submission.assignmentId,
+        userId: submission.userId,
+        title: submission.title,
+        deadline: submission.deadline,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+        serverUpdatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } else if (submission.groupId) {
+    const subRef = doc(
+      db,
+      'groups',
+      submission.groupId,
+      'submissions',
+      submission.id
+    );
+    await setDoc(
+      subRef,
+      {
+        id: submission.id,
+        groupId: submission.groupId,
+        userId: submission.userId,
+        title: submission.title,
+        deadline: submission.deadline,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+        serverUpdatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
 }
 
 // ─── Group Assignments ────────────────────────────────────────────────────────

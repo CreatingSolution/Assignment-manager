@@ -66,27 +66,35 @@ export const SQL_CREATE_TASKS = `
 export const SQL_CREATE_SUBMISSIONS = `
   CREATE TABLE IF NOT EXISTS submissions (
     id            TEXT    NOT NULL PRIMARY KEY,
-    assignment_id TEXT    NOT NULL,
+    assignment_id TEXT,
+    group_id      TEXT,
     user_id       TEXT    NOT NULL,
     title         TEXT    NOT NULL,
     deadline      TEXT    NOT NULL,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL,
-    is_synced     INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+    is_synced     INTEGER NOT NULL DEFAULT 0
   )
 `;
 
 export const SQL_CREATE_GROUPS = `
   CREATE TABLE IF NOT EXISTS groups (
-    id            TEXT    NOT NULL PRIMARY KEY,
-    name          TEXT    NOT NULL,
-    access_token  TEXT    NOT NULL UNIQUE,
-    admin_user_id TEXT    NOT NULL,
-    assignment_id TEXT,
-    created_at    INTEGER NOT NULL,
-    updated_at    INTEGER NOT NULL,
-    is_synced     INTEGER NOT NULL DEFAULT 0
+    id              TEXT    NOT NULL PRIMARY KEY,
+    name            TEXT    NOT NULL,
+    access_token    TEXT    NOT NULL UNIQUE,
+    admin_user_id   TEXT    NOT NULL,
+    assignment_id   TEXT,
+    course_id       TEXT,
+    description     TEXT,
+    deadline        TEXT,
+    priority        TEXT    NOT NULL DEFAULT 'medium',
+    total_marks     REAL,
+    estimated_hours REAL,
+    estimated_days  REAL,
+    hours_per_day   REAL,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    is_synced       INTEGER NOT NULL DEFAULT 0
   )
 `;
 
@@ -105,9 +113,11 @@ export const SQL_CREATE_GROUP_TASKS = `
   CREATE TABLE IF NOT EXISTS group_tasks (
     id                  TEXT    NOT NULL PRIMARY KEY,
     group_id            TEXT    NOT NULL,
+    submission_id       TEXT,
     title               TEXT    NOT NULL,
     description         TEXT,
     target_date         TEXT,
+    estimated_hours     REAL,
     status              TEXT    NOT NULL DEFAULT 'pending',
     created_by_user_id  TEXT    NOT NULL,
     created_at          INTEGER NOT NULL,

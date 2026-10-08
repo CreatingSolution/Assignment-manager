@@ -18,6 +18,7 @@ interface DatePickerModalProps {
   allowClear?: boolean;
   onSelect: (dateString: string) => void;
   onClose: () => void;
+  useNativeModal?: boolean; // if false, renders as absolute overlay (for use inside existing modals)
 }
 
 const MONTH_NAMES = [
@@ -51,7 +52,8 @@ export function DatePickerModal({
   allowClear = false,
   onSelect,
   onClose,
-}: DatePickerModalProps): React.JSX.Element {
+  useNativeModal = true,
+}: DatePickerModalProps): React.JSX.Element | null {
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => formatDateYMD(today), [today]);
 
@@ -155,27 +157,21 @@ export function DatePickerModal({
     onClose();
   };
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback>
-            <View style={styles.dialog}>
-              {/* Header */}
-              <View style={styles.header}>
-                <View style={styles.titleContainer}>
-                  <Text style={styles.titleIcon}>📅</Text>
-                  <Text style={styles.title}>{title}</Text>
-                </View>
-                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                  <Text style={styles.closeBtnText}>✕</Text>
-                </TouchableOpacity>
+  const modalInnerContent = (
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={useNativeModal ? styles.overlay : styles.nonModalOverlay}>
+        <TouchableWithoutFeedback>
+          <View style={styles.dialog}>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.titleContainer}>
+                <Text style={styles.titleIcon}>📅</Text>
+                <Text style={styles.title}>{title}</Text>
               </View>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
               {/* Month Navigator */}
               <View style={styles.monthNav}>
@@ -344,18 +340,42 @@ export function DatePickerModal({
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
-    </Modal>
-  );
-}
+    );
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
+    if (!useNativeModal) {
+      if (!visible) return null;
+      return modalInnerContent;
+    }
+
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      >
+        {modalInnerContent}
+      </Modal>
+    );
+  }
+
+  const styles = StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.55)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 16,
+    },
+    nonModalOverlay: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: 'rgba(0, 0, 0, 0.55)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 16,
+      zIndex: 99999,
+      elevation: 9999,
+    },
   dialog: {
     backgroundColor: '#fff',
     borderRadius: 20,

@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,14 +13,19 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS } from '../../../constants';
+import { COLORS, PRIORITY_COLORS } from '../../../constants';
 import { useAuth } from '../../../hooks/use-auth.hook';
+import { useCourses } from '../../../hooks/use-courses.hook';
 import {
+  useAddGroupMember,
   useCompleteGroupTask,
+  useCreateGroupSubmission,
   useCreateGroupTask,
   useDeleteGroup,
+  useDeleteGroupTask,
   useGroup,
   useGroupMembers,
+  useGroupSubmissions,
   useGroupTasks,
   useManageGroupMember,
 } from '../../../hooks/use-groups.hook';
@@ -32,28 +37,57 @@ export default function GroupDetailScreen(): React.JSX.Element {
   const router = useRouter();
   const { user } = useAuth();
 
+  useEffect(() => {
+    if (id === 'index' || !id) {
+      router.replace('/groups');
+    }
+  }, [id, router]);
+
   const { data: group, isLoading } = useGroup(id);
   const { data: members = [] } = useGroupMembers(id);
   const { data: tasks = [] } = useGroupTasks(id);
+  const { data: submissions = [] } = useGroupSubmissions(id);
+  const { data: courses = [] } = useCourses();
 
   const manageMember = useManageGroupMember();
+  const addMember = useAddGroupMember();
   const deleteGroup = useDeleteGroup();
   const createGroupTask = useCreateGroupTask();
+  const deleteGroupTask = useDeleteGroupTask();
   const completeGroupTask = useCompleteGroupTask();
+  const createSubmission = useCreateGroupSubmission();
   const coins = useRewardsStore((s) => s.coins);
 
-  // New Group Task Modal
+  // ─── Modal States ─────────────────────────────────────────────────────────────
+  // 1. New Task Modal
   const [taskModalVisible, setTaskModalVisible] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
   const [taskTargetDate, setTaskTargetDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 7);
     return d.toISOString().split('T')[0];
   });
+  const [taskEstHours, setTaskEstHours] = useState('2');
+  const [taskPhaseId, setTaskPhaseId] = useState<string | undefined>(undefined);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
-  const [calendarPickerVisible, setCalendarPickerVisible] = useState(false);
+  const [taskDatePickerVisible, setTaskDatePickerVisible] = useState(false);
 
-  if (isLoading || !group) {
+  // 2. Add Member Directly Modal (Admin only)
+  const [addMemberModalVisible, setAddMemberModalVisible] = useState(false);
+  const [newMemberUserId, setNewMemberUserId] = useState('');
+
+  // 3. Add Phase / Submission Modal
+  const [phaseModalVisible, setPhaseModalVisible] = useState(false);
+  const [phaseTitle, setPhaseTitle] = useState('');
+  const [phaseDeadline, setPhaseDeadline] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    return d.toISOString().split('T')[0];
+  });
+  const [phaseDatePickerVisible, setPhaseDatePickerVisible] = useState(false);
+
+  if (id === 'index' || !id) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.center}>
@@ -63,9 +97,58 @@ export default function GroupDetailScreen(): React.JSX.Element {
     );
   }
 
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!group) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.center}>
+          <Text style={{ fontSize: 44, marginBottom: 12 }}>👥</Text>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: COLORS.text.primary, marginBottom: 6 }}>
+            Group Assignment Not Found
+          </Text>
+          <Text
+            style={{
+              fontSize: 13,
+              color: COLORS.text.secondary,
+              marginBottom: 16,
+              textAlign: 'center',
+              paddingHorizontal: 32,
+            }}
+          >
+            This group does not exist or may have been deleted.
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.replace('/groups')}
+            style={{
+              backgroundColor: COLORS.primary,
+              paddingHorizontal: 18,
+              paddingVertical: 10,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700' }}>← Go to Group Workspace</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const isAdmin = group.adminUserId === user?.id;
   const approvedMembers = members.filter((m) => m.status === 'approved');
   const pendingRequests = members.filter((m) => m.status === 'pending');
+  const course = courses.find((c) => c.id === group.courseId);
+  const prioColor = group.priority ? PRIORITY_COLORS[group.priority] : COLORS.primary;
+
+  // ─── Handlers ─────────────────────────────────────────────────────────────────
 
   const handleCreateTask = async () => {
     if (!taskTitle.trim()) {
@@ -74,14 +157,21 @@ export default function GroupDetailScreen(): React.JSX.Element {
     }
 
     try {
+      const estH = taskEstHours ? parseFloat(taskEstHours) : undefined;
       await createGroupTask.mutateAsync({
         groupId: group.id,
+        submissionId: taskPhaseId,
         title: taskTitle.trim(),
+        description: taskDescription.trim() || undefined,
         targetDate: taskTargetDate.trim() || undefined,
+        estimatedHours: isNaN(estH ?? NaN) ? undefined : estH,
         assignedUserIds: selectedAssignees.length > 0 ? selectedAssignees : [user?.id ?? ''],
       });
+
       setTaskTitle('');
+      setTaskDescription('');
       setSelectedAssignees([]);
+      setTaskPhaseId(undefined);
       setTaskModalVisible(false);
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create task');
@@ -94,7 +184,7 @@ export default function GroupDetailScreen(): React.JSX.Element {
       if (res.earnedCoin) {
         Alert.alert(
           '🎉 Coins Earned!',
-          `Awesome work! You completed this task before the estimated target date and earned ${res.coinsAwarded} reward coins!`
+          `Awesome job! You completed this task before or on the estimated target date and earned ${res.coinsAwarded} reward coins!`
         );
       } else {
         Alert.alert('Task Completed', 'Great job! The group task has been marked complete.');
@@ -104,10 +194,52 @@ export default function GroupDetailScreen(): React.JSX.Element {
     }
   };
 
+  const handleAddMemberDirectly = async () => {
+    if (!newMemberUserId.trim()) {
+      Alert.alert('Required', 'Please enter a user ID.');
+      return;
+    }
+    try {
+      await addMember.mutateAsync({ groupId: group.id, userId: newMemberUserId.trim() });
+      setNewMemberUserId('');
+      setAddMemberModalVisible(false);
+      Alert.alert('Member Added', 'User has been directly added to the group.');
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to add member');
+    }
+  };
+
+  const handleAddPhase = async () => {
+    if (!phaseTitle.trim()) {
+      Alert.alert('Required', 'Please enter a phase title.');
+      return;
+    }
+    try {
+      await createSubmission.mutateAsync({
+        groupId: group.id,
+        title: phaseTitle.trim(),
+        deadline: phaseDeadline,
+      });
+      setPhaseTitle('');
+      setPhaseModalVisible(false);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to add phase');
+    }
+  };
+
   const handleDeleteGroup = () => {
+    const otherMembers = approvedMembers.filter((m) => m.userId !== user?.id);
+    if (otherMembers.length > 0) {
+      Alert.alert(
+        'Action Blocked',
+        `Admin must remove all other members from the group before deleting it.\n\nCurrent other members: ${otherMembers.length}`
+      );
+      return;
+    }
+
     Alert.alert(
       'Delete Group Assignment',
-      'Only the group Admin can delete this group after all other members are removed. Do you want to proceed?',
+      'Are you sure you want to permanently delete this group assignment? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -136,15 +268,75 @@ export default function GroupDetailScreen(): React.JSX.Element {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.navTitle} numberOfLines={1}>{group.name}</Text>
+        <Text style={styles.navTitle} numberOfLines={1}>
+          {group.name}
+        </Text>
         <View style={styles.coinBadge}>
           <Text style={styles.coinBadgeText}>🪙 {coins}</Text>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Group Header Card */}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ─── Assignment Details Card ────────────────────────────────────────── */}
         <View style={styles.card}>
+          <View style={styles.cardTitleRow}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.groupMainTitle}>{group.name}</Text>
+              {course ? (
+                <Text style={styles.courseSubtitle}>
+                  📚 {course.code} — {course.title}
+                </Text>
+              ) : null}
+            </View>
+            {group.priority ? (
+              <View style={[styles.priorityBadge, { backgroundColor: prioColor + '20' }]}>
+                <Text style={[styles.priorityBadgeText, { color: prioColor }]}>
+                  {group.priority.toUpperCase()}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {group.description ? (
+            <Text style={styles.descriptionText}>{group.description}</Text>
+          ) : null}
+
+          {/* Meta Grid */}
+          <View style={styles.detailsGrid}>
+            {group.deadline ? (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Final Deadline</Text>
+                <Text style={styles.detailValue}>
+                  📅 {new Date(group.deadline).toLocaleDateString()}
+                </Text>
+              </View>
+            ) : null}
+
+            {group.estimatedHours ? (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Workload</Text>
+                <Text style={styles.detailValue}>
+                  ⏱️ {group.estimatedHours}h ({group.hoursPerDay || 2}h/day)
+                </Text>
+              </View>
+            ) : null}
+
+            {group.totalMarks ? (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Total Marks</Text>
+                <Text style={styles.detailValue}>🎯 {group.totalMarks} pts</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Role</Text>
+              <Text style={[styles.detailValue, { color: isAdmin ? COLORS.primary : COLORS.text.primary }]}>
+                {isAdmin ? '👑 Admin (Creator)' : '🎓 Team Member'}
+              </Text>
+            </View>
+          </View>
+
+          {/* 6-Digit Access Token Banner */}
           <View style={styles.tokenBanner}>
             <View>
               <Text style={styles.tokenBannerLabel}>6-DIGIT ACCESS TOKEN</Text>
@@ -162,18 +354,9 @@ export default function GroupDetailScreen(): React.JSX.Element {
               <Text style={styles.shareBtnText}>📋 Share Token</Text>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.groupMetaRow}>
-            <Text style={styles.metaText}>
-              Admin: {isAdmin ? 'You (Creator)' : 'Team Lead'}
-            </Text>
-            <Text style={styles.metaText}>
-              👥 {approvedMembers.length} Members
-            </Text>
-          </View>
         </View>
 
-        {/* Pending Requests Section (Admin Only) */}
+        {/* ─── Pending Requests Section (Admin Only) ──────────────────────────── */}
         {isAdmin && pendingRequests.length > 0 ? (
           <View style={styles.pendingSection}>
             <Text style={styles.sectionHeaderTitle}>
@@ -222,29 +405,143 @@ export default function GroupDetailScreen(): React.JSX.Element {
           </View>
         ) : null}
 
-        {/* Group Tasks Section */}
+        {/* ─── Phased Deliverables (Ex 2) ───────────────────────────────────────── */}
+        {submissions.length > 0 ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionHeaderTitle}>Phased Submissions & Deliverables</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Submissions with sub-deadlines and respective task lists
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setPhaseModalVisible(true)}
+                style={styles.addPhaseSmallBtn}
+              >
+                <Text style={styles.addPhaseSmallText}>+ Add Phase</Text>
+              </TouchableOpacity>
+            </View>
+
+            {submissions.map((sub, sIdx) => {
+              const subTasks = tasks.filter((t) => t.submissionId === sub.id);
+              return (
+                <View key={sub.id} style={styles.phaseCard}>
+                  <View style={styles.phaseCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.phaseCardTitle}>
+                        📦 Phase {sIdx + 1}: {sub.title}
+                      </Text>
+                      <Text style={styles.phaseCardDeadline}>
+                        ⏳ Sub-Deadline: {new Date(sub.deadline).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setTaskPhaseId(sub.id);
+                        setTaskModalVisible(true);
+                      }}
+                      style={styles.addTaskToPhaseBtn}
+                    >
+                      <Text style={styles.addTaskToPhaseText}>+ Add Task</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Tasks under this phase */}
+                  {subTasks.length === 0 ? (
+                    <Text style={styles.emptyPhaseTasks}>No tasks in this phase yet.</Text>
+                  ) : (
+                    subTasks.map((t) => {
+                      const isCompleted = t.status === 'completed';
+                      return (
+                        <View
+                          key={t.id}
+                          style={[styles.taskCard, isCompleted && styles.taskCardDone]}
+                        >
+                          <TouchableOpacity
+                            onPress={() => !isCompleted && handleCompleteTask(t.id)}
+                            disabled={isCompleted}
+                            style={[styles.checkbox, isCompleted && styles.checkboxDone]}
+                          >
+                            {isCompleted ? <Text style={styles.checkIcon}>✓</Text> : null}
+                          </TouchableOpacity>
+
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.taskTitle, isCompleted && styles.taskTitleDone]}>
+                              {t.title}
+                            </Text>
+                            <View style={styles.taskMetaRow}>
+                              {t.targetDate ? (
+                                <Text style={styles.taskDate}>
+                                  Target: {new Date(t.targetDate).toLocaleDateString()}
+                                </Text>
+                              ) : null}
+                              <Text style={styles.taskAssignees}>
+                                👥 {t.assignedUserIds.length} Assigned
+                              </Text>
+                            </View>
+                          </View>
+
+                          {isCompleted ? (
+                            <View style={styles.rewardTag}>
+                              <Text style={styles.rewardTagText}>+10 🪙</Text>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              onPress={() =>
+                                deleteGroupTask.mutate({ taskId: t.id, groupId: group.id })
+                              }
+                              style={styles.deleteTaskBtn}
+                            >
+                              <Text style={{ color: COLORS.text.muted, fontSize: 13 }}>✕</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
+        {/* ─── Milestone Tasks (Ex 1 / General) ─────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <View>
-              <Text style={styles.sectionHeaderTitle}>Group Subtasks</Text>
+              <Text style={styles.sectionHeaderTitle}>
+                {submissions.length > 0 ? 'General Milestone Tasks' : 'Group Subtasks'}
+              </Text>
               <Text style={styles.sectionSubtitle}>
-                Complete tasks before estimate date to earn 🪙 coins!
+                Complete tasks on/before estimate date to earn 🪙 coins!
               </Text>
             </View>
             <TouchableOpacity
-              onPress={() => setTaskModalVisible(true)}
+              onPress={() => {
+                setTaskPhaseId(undefined);
+                setTaskModalVisible(true);
+              }}
               style={styles.addTaskBtn}
             >
               <Text style={styles.addTaskBtnText}>+ Add Task</Text>
             </TouchableOpacity>
           </View>
 
-          {tasks.length === 0 ? (
-            <Text style={styles.emptyText}>
-              No group tasks yet. Any member can create and assign subtasks.
-            </Text>
-          ) : (
-            tasks.map((task) => {
+          {(() => {
+            const standaloneTasks = submissions.length > 0
+              ? tasks.filter((t) => !t.submissionId)
+              : tasks;
+
+            if (standaloneTasks.length === 0) {
+              return (
+                <Text style={styles.emptyText}>
+                  No tasks yet. Any member can create and assign subtasks.
+                </Text>
+              );
+            }
+
+            return standaloneTasks.map((task) => {
               const isCompleted = task.status === 'completed';
               return (
                 <View key={task.id} style={[styles.taskCard, isCompleted && styles.taskCardDone]}>
@@ -274,16 +571,38 @@ export default function GroupDetailScreen(): React.JSX.Element {
                     <View style={styles.rewardTag}>
                       <Text style={styles.rewardTagText}>+10 🪙</Text>
                     </View>
-                  ) : null}
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() =>
+                        deleteGroupTask.mutate({ taskId: task.id, groupId: group.id })
+                      }
+                      style={styles.deleteTaskBtn}
+                    >
+                      <Text style={{ color: COLORS.text.muted, fontSize: 13 }}>✕</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
-            })
-          )}
+            });
+          })()}
         </View>
 
-        {/* Members List Section */}
+        {/* ─── Members List Section ───────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeaderTitle}>Approved Members ({approvedMembers.length})</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeaderTitle}>
+              Approved Members ({approvedMembers.length})
+            </Text>
+            {isAdmin ? (
+              <TouchableOpacity
+                onPress={() => setAddMemberModalVisible(true)}
+                style={styles.addMemberSmallBtn}
+              >
+                <Text style={styles.addMemberSmallText}>+ Add Member</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
           {approvedMembers.map((m) => (
             <View key={m.id} style={styles.memberRow}>
               <View style={styles.memberAvatar}>
@@ -294,7 +613,7 @@ export default function GroupDetailScreen(): React.JSX.Element {
               <View style={{ flex: 1 }}>
                 <Text style={styles.memberName}>
                   {m.userId === user?.id ? 'You' : `Member (${m.userId.slice(0, 8)}...)`}
-                  {m.userId === group.adminUserId ? ' (Admin)' : ''}
+                  {m.userId === group.adminUserId ? ' (Admin / Creator)' : ''}
                 </Text>
               </View>
               {isAdmin && m.userId !== group.adminUserId ? (
@@ -323,19 +642,24 @@ export default function GroupDetailScreen(): React.JSX.Element {
           ))}
         </View>
 
-        {/* Admin Delete Action */}
+        {/* ─── Admin Delete Action ────────────────────────────────────────────── */}
         {isAdmin ? (
           <TouchableOpacity onPress={handleDeleteGroup} style={styles.deleteGroupBtn}>
             <Text style={styles.deleteGroupText}>Delete Group Assignment (Admin Only)</Text>
           </TouchableOpacity>
         ) : null}
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* New Task Modal */}
+      {/* ─── New Task Modal ─────────────────────────────────────────────────── */}
       <Modal visible={taskModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create Group Subtask</Text>
+            <Text style={styles.modalTitle}>
+              {taskPhaseId ? 'Create Task in Phase' : 'Create Group Subtask'}
+            </Text>
+
             <TextInput
               style={styles.modalInput}
               placeholder="Task title (e.g. Write Introduction & Background)"
@@ -343,10 +667,12 @@ export default function GroupDetailScreen(): React.JSX.Element {
               value={taskTitle}
               onChangeText={setTaskTitle}
             />
-            <Text style={styles.modalLabel}>Target Date (Tap to select) *</Text>
+
+            {/* Target Date with Calendar Picker */}
+            <Text style={styles.modalLabel}>Target Date (Calendar Selection) *</Text>
             <TouchableOpacity
               style={[styles.modalInput, styles.calendarPickerRow]}
-              onPress={() => setCalendarPickerVisible(true)}
+              onPress={() => setTaskDatePickerVisible(true)}
               activeOpacity={0.7}
             >
               <Text style={{ fontSize: 16 }}>📅</Text>
@@ -355,7 +681,8 @@ export default function GroupDetailScreen(): React.JSX.Element {
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.modalLabel}>Assign Members:</Text>
+            {/* Assignees (Multi-select) */}
+            <Text style={styles.modalLabel}>Assign Members (One or Many):</Text>
             <View style={styles.assigneesRow}>
               {approvedMembers.map((m) => {
                 const isSelected = selectedAssignees.includes(m.userId);
@@ -371,7 +698,7 @@ export default function GroupDetailScreen(): React.JSX.Element {
                     }}
                     style={[styles.assigneeChip, isSelected && styles.assigneeChipActive]}
                   >
-                    <Text style={[styles.assigneeChipText, isSelected && { color: '#fff' }]}>
+                    <Text style={[styles.assigneeChipText, isSelected && { color: '#fff', fontWeight: '700' }]}>
                       {m.userId === user?.id ? 'Me' : m.userId.slice(0, 6)}
                     </Text>
                   </TouchableOpacity>
@@ -390,17 +717,100 @@ export default function GroupDetailScreen(): React.JSX.Element {
                 <Text style={styles.modalConfirmText}>Add Task</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Non-modal Date Picker overlay inside Task Modal */}
+            <DatePickerModal
+              useNativeModal={false}
+              visible={taskDatePickerVisible}
+              title="Select Task Target Date"
+              initialDate={taskTargetDate}
+              onSelect={(d) => {
+                setTaskTargetDate(d);
+                setTaskDatePickerVisible(false);
+              }}
+              onClose={() => setTaskDatePickerVisible(false)}
+            />
           </View>
         </View>
       </Modal>
 
-      <DatePickerModal
-        visible={calendarPickerVisible}
-        title="Select Subtask Target Date"
-        initialDate={taskTargetDate}
-        onSelect={(d) => setTaskTargetDate(d)}
-        onClose={() => setCalendarPickerVisible(false)}
-      />
+      {/* ─── Add Member Directly Modal (Admin) ──────────────────────────────── */}
+      <Modal visible={addMemberModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Member Directly</Text>
+            <Text style={styles.modalSubtitle}>
+              As Admin, you can add a team member directly by entering their User ID.
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="User ID (e.g. usr_12345)"
+              placeholderTextColor={COLORS.text.muted}
+              value={newMemberUserId}
+              onChangeText={setNewMemberUserId}
+            />
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                onPress={() => setAddMemberModalVisible(false)}
+                style={styles.modalCancelBtn}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleAddMemberDirectly} style={styles.modalConfirmBtn}>
+                <Text style={styles.modalConfirmText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Add Phase Modal ────────────────────────────────────────────────── */}
+      <Modal visible={phaseModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Submission Phase</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Phase title (e.g. Submission 2 - Prototype)"
+              placeholderTextColor={COLORS.text.muted}
+              value={phaseTitle}
+              onChangeText={setPhaseTitle}
+            />
+            <Text style={styles.modalLabel}>Sub-Deadline *</Text>
+            <TouchableOpacity
+              style={[styles.modalInput, styles.calendarPickerRow]}
+              onPress={() => setPhaseDatePickerVisible(true)}
+            >
+              <Text>📅</Text>
+              <Text style={styles.calendarPickerDateText}>{phaseDeadline}</Text>
+            </TouchableOpacity>
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                onPress={() => setPhaseModalVisible(false)}
+                style={styles.modalCancelBtn}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleAddPhase} style={styles.modalConfirmBtn}>
+                <Text style={styles.modalConfirmText}>Add Phase</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Non-modal Date Picker overlay inside Phase Modal */}
+            <DatePickerModal
+              useNativeModal={false}
+              visible={phaseDatePickerVisible}
+              title="Select Phase Sub-Deadline"
+              initialDate={phaseDeadline}
+              onSelect={(d) => {
+                setPhaseDeadline(d);
+                setPhaseDatePickerVisible(false);
+              }}
+              onClose={() => setPhaseDatePickerVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -437,6 +847,29 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 14,
   },
+  cardTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  groupMainTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text.primary },
+  courseSubtitle: { fontSize: 13, color: COLORS.primary, fontWeight: '600', marginTop: 2 },
+  priorityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  priorityBadgeText: { fontSize: 10, fontWeight: '800' },
+  descriptionText: { fontSize: 13, color: COLORS.text.secondary, marginBottom: 12, lineHeight: 18 },
+  detailsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 14,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  detailItem: { minWidth: '45%' },
+  detailLabel: { fontSize: 11, color: COLORS.text.muted, fontWeight: '600' },
+  detailValue: { fontSize: 13, fontWeight: '700', color: COLORS.text.primary, marginTop: 2 },
   tokenBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -446,14 +879,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#BFDBFE',
-    marginBottom: 12,
   },
   tokenBannerLabel: { fontSize: 10, fontWeight: '800', color: COLORS.primary },
   tokenBannerCode: { fontSize: 24, fontWeight: '900', color: COLORS.primary, letterSpacing: 4 },
   shareBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
   shareBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  groupMetaRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  metaText: { fontSize: 13, color: COLORS.text.secondary },
   pendingSection: {
     backgroundColor: '#FFFBEB',
     borderRadius: 14,
@@ -496,14 +926,32 @@ const styles = StyleSheet.create({
   sectionSubtitle: { fontSize: 12, color: COLORS.text.secondary, marginTop: 2 },
   addTaskBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   addTaskBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  addPhaseSmallBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  addPhaseSmallText: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
   emptyText: { fontSize: 13, color: COLORS.text.muted, marginTop: 4 },
+  phaseCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 12,
+  },
+  phaseCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  phaseCardTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text.primary },
+  phaseCardDeadline: { fontSize: 12, color: COLORS.text.secondary, marginTop: 2 },
+  addTaskToPhaseBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  addTaskToPhaseText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  emptyPhaseTasks: { fontSize: 12, color: COLORS.text.muted, fontStyle: 'italic', paddingVertical: 4 },
   taskCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#fff',
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   taskCardDone: { opacity: 0.6 },
   checkbox: {
@@ -524,6 +972,7 @@ const styles = StyleSheet.create({
   taskMetaRow: { flexDirection: 'row', gap: 10, marginTop: 2 },
   taskDate: { fontSize: 11, color: COLORS.text.secondary },
   taskAssignees: { fontSize: 11, color: COLORS.text.secondary },
+  deleteTaskBtn: { padding: 4 },
   rewardTag: {
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
@@ -531,6 +980,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   rewardTagText: { fontSize: 11, fontWeight: '800', color: '#B45309' },
+  addMemberSmallBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  addMemberSmallText: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -558,6 +1009,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.status.error,
     alignItems: 'center',
     marginTop: 10,
+    backgroundColor: '#FEF2F2',
   },
   deleteGroupText: { color: COLORS.status.error, fontSize: 14, fontWeight: '700' },
   modalOverlay: {
@@ -567,8 +1019,9 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 20 },
-  modalTitle: { fontSize: 17, fontWeight: '700', color: COLORS.text.primary, marginBottom: 12 },
-  modalLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text.primary, marginBottom: 6 },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: COLORS.text.primary, marginBottom: 8 },
+  modalSubtitle: { fontSize: 12, color: COLORS.text.secondary, marginBottom: 12 },
+  modalLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text.primary, marginBottom: 6, marginTop: 6 },
   modalInput: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -576,8 +1029,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    marginBottom: 12,
+    marginBottom: 8,
     color: COLORS.text.primary,
+    backgroundColor: '#fff',
   },
   calendarPickerRow: {
     flexDirection: 'row',
@@ -601,10 +1055,9 @@ const styles = StyleSheet.create({
   },
   assigneeChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   assigneeChipText: { fontSize: 12, color: COLORS.text.secondary },
-  modalBtnRow: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+  modalBtnRow: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end', marginTop: 10 },
   modalCancelBtn: { paddingVertical: 10, paddingHorizontal: 14 },
   modalCancelText: { fontSize: 14, color: COLORS.text.secondary, fontWeight: '600' },
   modalConfirmBtn: { backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
   modalConfirmText: { fontSize: 14, color: '#fff', fontWeight: '700' },
 });
-

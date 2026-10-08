@@ -74,7 +74,8 @@ export interface Task {
 
 export interface Submission {
   id: string;
-  assignmentId: string;
+  assignmentId?: string;
+  groupId?: string;
   userId: string;
   title: string;
   deadline: string;          // ISO 8601 string
@@ -89,6 +90,14 @@ export interface Group {
   accessToken: string;       // 6-digit token for joining
   adminUserId: string;
   assignmentId?: string;     // optional linked assignment
+  courseId?: string;
+  description?: string;
+  deadline?: string;         // ISO 8601
+  priority?: Priority;
+  totalMarks?: number;
+  estimatedHours?: number;
+  estimatedDays?: number;
+  hoursPerDay?: number;
   createdAt: number;
   updatedAt: number;
   isSynced: boolean;
@@ -105,9 +114,11 @@ export interface GroupMember {
 export interface GroupTask {
   id: string;
   groupId: string;
+  submissionId?: string;     // links to phased submission (e.g. submission_1, submission_2)
   title: string;
   description?: string;
   targetDate?: string;
+  estimatedHours?: number;
   status: TaskStatus;
   createdByUserId: string;
   createdAt: number;

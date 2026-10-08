@@ -8,6 +8,7 @@ export default function AppLayout(): React.JSX.Element {
       <Stack.Screen name="assignments/create" />
       <Stack.Screen name="assignments/[id]" />
       <Stack.Screen name="groups/index" />
+      <Stack.Screen name="groups/create" />
       <Stack.Screen name="groups/[id]" />
       <Stack.Screen name="smart-schedule" />
     </Stack>

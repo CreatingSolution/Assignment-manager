@@ -4,7 +4,8 @@ import { generateId } from '../../utils/id.utils';
 
 interface SubmissionRow {
   id: string;
-  assignment_id: string;
+  assignment_id: string | null;
+  group_id: string | null;
   user_id: string;
   title: string;
   deadline: string;
@@ -16,7 +17,8 @@ interface SubmissionRow {
 function mapRow(row: SubmissionRow): Submission {
   return {
     id: row.id,
-    assignmentId: row.assignment_id,
+    assignmentId: row.assignment_id ?? undefined,
+    groupId: row.group_id ?? undefined,
     userId: row.user_id,
     title: row.title,
     deadline: row.deadline,
@@ -37,6 +39,14 @@ export class SubmissionRepository {
     return rows.map(mapRow);
   }
 
+  findByGroup(groupId: string): Submission[] {
+    const rows = this.db.getAllSync<SubmissionRow>(
+      'SELECT * FROM submissions WHERE group_id = ? ORDER BY deadline ASC',
+      [groupId]
+    );
+    return rows.map(mapRow);
+  }
+
   findById(id: string): Submission | null {
     const row = this.db.getFirstSync<SubmissionRow>(
       'SELECT * FROM submissions WHERE id = ?',
@@ -45,13 +55,28 @@ export class SubmissionRepository {
     return row ? mapRow(row) : null;
   }
 
-  create(input: { assignmentId: string; userId: string; title: string; deadline: string }): Submission {
+  create(input: {
+    assignmentId?: string;
+    groupId?: string;
+    userId: string;
+    title: string;
+    deadline: string;
+  }): Submission {
     const id = generateId();
     const now = Date.now();
     this.db.runSync(
-      `INSERT INTO submissions (id, assignment_id, user_id, title, deadline, created_at, updated_at, is_synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-      [id, input.assignmentId, input.userId, input.title, input.deadline, now, now]
+      `INSERT INTO submissions (id, assignment_id, group_id, user_id, title, deadline, created_at, updated_at, is_synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        id,
+        input.assignmentId ?? null,
+        input.groupId ?? null,
+        input.userId,
+        input.title,
+        input.deadline,
+        now,
+        now,
+      ]
     );
     return this.findById(id)!;
   }
@@ -66,11 +91,12 @@ export class SubmissionRepository {
       );
     } else {
       this.db.runSync(
-        `INSERT INTO submissions (id, assignment_id, user_id, title, deadline, created_at, updated_at, is_synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        `INSERT INTO submissions (id, assignment_id, group_id, user_id, title, deadline, created_at, updated_at, is_synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
         [
           submission.id,
-          submission.assignmentId,
+          submission.assignmentId ?? null,
+          submission.groupId ?? null,
           submission.userId,
           submission.title,
           submission.deadline,
@@ -86,4 +112,3 @@ export class SubmissionRepository {
     return result.changes > 0;
   }
 }
-

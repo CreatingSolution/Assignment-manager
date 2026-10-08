@@ -13,43 +13,23 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS } from '../../../constants';
-import { useCreateGroup, useGroups, useJoinGroup } from '../../../hooks/use-groups.hook';
+import { COLORS, PRIORITY_COLORS } from '../../../constants';
+import { useGroups, useJoinGroup } from '../../../hooks/use-groups.hook';
+import { useCourses } from '../../../hooks/use-courses.hook';
 import { useRewardsStore } from '../../../store/rewards.store';
 
 export default function GroupsHomeScreen(): React.JSX.Element {
   const router = useRouter();
   const { data: groups = [], isLoading } = useGroups();
-  const createGroup = useCreateGroup();
+  const { data: courses = [] } = useCourses();
   const joinGroup = useJoinGroup();
   const coins = useRewardsStore((s) => s.coins);
 
-  // Modals
-  const [createModalVisible, setCreateModalVisible] = useState(false);
-  const [groupName, setGroupName] = useState('');
-
+  // ─── Join Modal State ─────────────────────────────────────────────────────────
   const [joinModalVisible, setJoinModalVisible] = useState(false);
   const [accessToken, setAccessToken] = useState('');
 
-  const handleCreate = async () => {
-    if (!groupName.trim()) {
-      Alert.alert('Required', 'Please enter a group name.');
-      return;
-    }
-    try {
-      const created = await createGroup.mutateAsync({ name: groupName.trim() });
-      setGroupName('');
-      setCreateModalVisible(false);
-      Alert.alert(
-        'Group Created! 🎉',
-        `Your 6-digit Access Token is: ${created.accessToken}\nShare this token with your teammates to let them request to join.`
-      );
-      router.push(`/groups/${created.id}` as any);
-    } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create group');
-    }
-  };
-
+  // ─── Join Handler ─────────────────────────────────────────────────────────────
   const handleJoin = async () => {
     if (accessToken.trim().length !== 6) {
       Alert.alert('Invalid Token', 'The access token must be exactly 6 digits.');
@@ -86,14 +66,16 @@ export default function GroupsHomeScreen(): React.JSX.Element {
       {/* Action Buttons */}
       <View style={styles.actionRow}>
         <TouchableOpacity
-          onPress={() => setCreateModalVisible(true)}
+          onPress={() => router.push('/groups/create')}
           style={[styles.actionBtn, { backgroundColor: COLORS.primary }]}
+          activeOpacity={0.8}
         >
-          <Text style={styles.actionBtnText}>+ Create Group</Text>
+          <Text style={styles.actionBtnText}>+ Create Group Assignment</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setJoinModalVisible(true)}
           style={[styles.actionBtn, styles.joinBtn]}
+          activeOpacity={0.8}
         >
           <Text style={[styles.actionBtnText, { color: COLORS.primary }]}>🔑 Join with Token</Text>
         </TouchableOpacity>
@@ -109,95 +91,112 @@ export default function GroupsHomeScreen(): React.JSX.Element {
           data={groups}
           keyExtractor={(g) => g.id}
           contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => router.push(`/groups/${item.id}` as any)}
-              style={styles.groupCard}
-            >
-              <View style={styles.cardHeader}>
-                <Text style={styles.groupName}>{item.name}</Text>
-                {item.isAdmin ? (
-                  <View style={styles.adminBadge}>
-                    <Text style={styles.adminBadgeText}>ADMIN</Text>
-                  </View>
-                ) : (
-                  <View style={styles.memberBadge}>
-                    <Text style={styles.memberBadgeText}>MEMBER</Text>
-                  </View>
-                )}
-              </View>
+          renderItem={({ item }) => {
+            const course = courses.find((c) => c.id === item.courseId);
+            const prioColor = item.priority ? PRIORITY_COLORS[item.priority] : COLORS.primary;
 
-              <View style={styles.tokenBox}>
-                <Text style={styles.tokenLabel}>Access Token:</Text>
-                <Text style={styles.tokenCode}>{item.accessToken}</Text>
-              </View>
-
-              <View style={styles.cardFooter}>
-                <Text style={styles.footerText}>👥 {item.memberCount} Approved Members</Text>
-                {item.pendingRequestsCount > 0 ? (
-                  <View style={styles.pendingBadge}>
-                    <Text style={styles.pendingBadgeText}>
-                      {item.pendingRequestsCount} Pending Request{item.pendingRequestsCount > 1 ? 's' : ''}
-                    </Text>
+            return (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => router.push(`/groups/${item.id}` as any)}
+                style={styles.groupCard}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.groupName}>{item.name}</Text>
+                    {course ? (
+                      <Text style={styles.courseSubtitle}>
+                        📚 {course.code} — {course.title}
+                      </Text>
+                    ) : null}
                   </View>
+
+                  <View style={styles.badgeColumn}>
+                    {item.isAdmin ? (
+                      <View style={styles.adminBadge}>
+                        <Text style={styles.adminBadgeText}>ADMIN</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.memberBadge}>
+                        <Text style={styles.memberBadgeText}>MEMBER</Text>
+                      </View>
+                    )}
+                    {item.priority ? (
+                      <View style={[styles.priorityBadge, { backgroundColor: prioColor + '20' }]}>
+                        <Text style={[styles.priorityBadgeText, { color: prioColor }]}>
+                          {item.priority.toUpperCase()}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+                {item.description ? (
+                  <Text style={styles.descriptionSnippet} numberOfLines={2}>
+                    {item.description}
+                  </Text>
                 ) : null}
-              </View>
-            </TouchableOpacity>
-          )}
+
+                {/* Token Box */}
+                <View style={styles.tokenBox}>
+                  <View style={styles.tokenBoxLeft}>
+                    <Text style={styles.tokenLabel}>Access Token:</Text>
+                    <Text style={styles.tokenCode}>{item.accessToken}</Text>
+                  </View>
+                  <Text style={styles.tokenHint}>Share 6-digit code</Text>
+                </View>
+
+                {/* Card Meta Info */}
+                <View style={styles.cardMetaGrid}>
+                  {item.deadline ? (
+                    <Text style={styles.metaItemText}>
+                      📅 Deadline: {new Date(item.deadline).toLocaleDateString()}
+                    </Text>
+                  ) : null}
+                  {item.estimatedHours ? (
+                    <Text style={styles.metaItemText}>
+                      ⏱️ {item.estimatedHours}h Workload
+                    </Text>
+                  ) : null}
+                  {item.totalMarks ? (
+                    <Text style={styles.metaItemText}>
+                      🎯 {item.totalMarks} Marks
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.footerText}>👥 {item.memberCount} Approved Members</Text>
+                  {item.pendingRequestsCount > 0 ? (
+                    <View style={styles.pendingBadge}>
+                      <Text style={styles.pendingBadgeText}>
+                        🔔 {item.pendingRequestsCount} Pending Request{item.pendingRequestsCount > 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            );
+          }}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>👥</Text>
               <Text style={styles.emptyTitle}>No Group Assignments</Text>
               <Text style={styles.emptySubtitle}>
-                Create a group assignment or join using a 6-digit access token from your teammate.
+                Create a group assignment with milestone tasks, or join using a 6-digit access token from your teammate.
               </Text>
             </View>
           }
         />
       )}
 
-      {/* Create Modal */}
-      <Modal visible={createModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create Group Assignment</Text>
-            <Text style={styles.modalSubtitle}>
-              You will be the group Admin. A 6-digit access token will be generated automatically.
-            </Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. Distributed Systems Final Project"
-              placeholderTextColor={COLORS.text.muted}
-              value={groupName}
-              onChangeText={setGroupName}
-            />
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                onPress={() => setCreateModalVisible(false)}
-                style={styles.modalCancelBtn}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleCreate}
-                disabled={createGroup.isPending}
-                style={styles.modalConfirmBtn}
-              >
-                <Text style={styles.modalConfirmText}>Create</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Join Modal */}
+      {/* ─── Join Modal ─────────────────────────────────────────────────────────── */}
       <Modal visible={joinModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Join Group Assignment</Text>
             <Text style={styles.modalSubtitle}>
-              Enter the 6-digit access token shared by the group creator.
+              Enter the unique 6-digit access token shared by the group creator.
             </Text>
             <TextInput
               style={[styles.modalInput, styles.tokenInput]}
@@ -268,7 +267,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
-  actionBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  actionBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { paddingHorizontal: 16, paddingBottom: 60 },
   groupCard: {
@@ -286,10 +285,12 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
-  groupName: { fontSize: 16, fontWeight: '700', color: COLORS.text.primary, flex: 1 },
+  groupName: { fontSize: 16, fontWeight: '700', color: COLORS.text.primary },
+  courseSubtitle: { fontSize: 12, color: COLORS.primary, fontWeight: '600', marginTop: 2 },
+  badgeColumn: { alignItems: 'flex-end', gap: 4 },
   adminBadge: {
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 8,
@@ -306,18 +307,48 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   memberBadgeText: { fontSize: 10, fontWeight: '700', color: COLORS.text.secondary },
+  priorityBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  priorityBadgeText: { fontSize: 9, fontWeight: '800' },
+  descriptionSnippet: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginBottom: 10,
+    lineHeight: 18,
+  },
   tokenBox: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
     padding: 10,
     borderRadius: 8,
-    gap: 8,
-    marginBottom: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
+  tokenBoxLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tokenLabel: { fontSize: 12, color: COLORS.text.secondary },
-  tokenCode: { fontSize: 15, fontWeight: '800', color: COLORS.text.primary, letterSpacing: 2 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tokenCode: { fontSize: 16, fontWeight: '800', color: COLORS.text.primary, letterSpacing: 2 },
+  tokenHint: { fontSize: 11, color: COLORS.primary, fontWeight: '600' },
+  cardMetaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 10,
+  },
+  metaItemText: { fontSize: 12, color: COLORS.text.secondary, fontWeight: '500' },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: 8,
+  },
   footerText: { fontSize: 12, color: COLORS.text.secondary },
   pendingBadge: {
     backgroundColor: '#FEF2F2',
@@ -336,6 +367,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
     maxWidth: 280,
   },
+
+  // Join Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -350,13 +383,13 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text.primary, marginBottom: 4 },
   modalSubtitle: { fontSize: 13, color: COLORS.text.secondary, marginBottom: 16 },
   modalInput: {
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    marginBottom: 16,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
     color: COLORS.text.primary,
   },
   tokenInput: {
@@ -364,6 +397,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 6,
     fontWeight: '700',
+    backgroundColor: '#F8FAFC',
+    marginBottom: 16,
   },
   modalBtnRow: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
   modalCancelBtn: { paddingVertical: 10, paddingHorizontal: 16 },
@@ -376,4 +411,3 @@ const styles = StyleSheet.create({
   },
   modalConfirmText: { fontSize: 14, color: '#fff', fontWeight: '700' },
 });
-

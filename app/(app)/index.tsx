@@ -259,7 +259,7 @@ export default function HomeScreen(): React.JSX.Element {
           <TouchableOpacity
             style={styles.coinsBadge}
             activeOpacity={0.8}
-            onPress={() => router.push('/groups/index')}
+            onPress={() => router.push('/groups')}
           >
             <Text style={styles.coinsText}>🪙 {coins} Coins</Text>
           </TouchableOpacity>
@@ -293,7 +293,7 @@ export default function HomeScreen(): React.JSX.Element {
         <TouchableOpacity
           style={[styles.actionCard, { backgroundColor: '#0284c7' }]}
           activeOpacity={0.8}
-          onPress={() => router.push('/groups/index')}
+          onPress={() => router.push('/groups')}
         >
           <Text style={styles.actionCardIcon}>👥</Text>
           <Text style={styles.actionCardTitle}>Group Workspace</Text>
