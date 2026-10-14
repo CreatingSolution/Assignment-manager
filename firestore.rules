@@ -1,8 +1,151 @@
 rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users/{userId}
+// Document ID: Firebase Auth UID
+// Fields:
+//   - id: string (required, immutable) - Matches auth.uid
+//   - email: string (required) - User email address (PII)
+//   - username: string (required) - Unique display username
+//   - name: string (optional, nullable) - Full name
+//   - avatarColor: string (optional, nullable) - Hex color string
+//   - createdAt: number/timestamp (required, immutable)
+//   - updatedAt: number/timestamp (optional)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// Collection: users/{userId}/courses/{courseId}
+// Document ID: Course UUID/ID
+// Fields:
+//   - id: string (required, immutable)
+//   - userId: string (required, immutable) - Matches parent userId
+//   - code: string (required) - Course code (e.g. CS101)
+//   - title: string (required) - Course title
+//   - color: string (required) - Hex color
+//   - createdAt: number/timestamp (required, immutable)
+//   - updatedAt: number/timestamp (optional)
+//   - isDeleted: bool (optional, nullable)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// Collection: users/{userId}/assignments/{assignmentId}
+// Document ID: Assignment UUID/ID
+// Fields:
+//   - id: string (required, immutable)
+//   - userId: string (required, immutable) - Matches parent userId
+//   - courseId: string (optional, nullable)
+//   - title: string (required) - Assignment title
+//   - description: string (optional, nullable)
+//   - sourceUrl: string (optional, nullable)
+//   - priority: string (required) - 'low' | 'medium' | 'high'
+//   - totalMarks: number (optional, nullable)
+//   - deadline: string/timestamp (required) - ISO 8601 string or timestamp
+//   - estimatedHours: number (optional, nullable)
+//   - estimatedDays: number (optional, nullable)
+//   - hoursPerDay: number (optional, nullable)
+//   - status: string (required) - 'pending' | 'in_progress' | 'completed'
+//   - attachments: list (optional, nullable)
+//   - createdAt: number/timestamp (required, immutable)
+//   - updatedAt: number/timestamp (optional)
+//   - isDeleted: bool (optional, nullable)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// Collection: users/{userId}/assignments/{assignmentId}/tasks/{taskId}
+//         and users/{userId}/tasks/{taskId}
+// Document ID: Task UUID/ID
+// Fields:
+//   - id: string (required, immutable)
+//   - assignmentId: string (optional, nullable)
+//   - submissionId: string (optional, nullable)
+//   - userId: string (required, immutable) - Matches parent userId
+//   - title: string (required)
+//   - description: string (optional, nullable)
+//   - targetDate: string/timestamp (optional, nullable)
+//   - estimatedHours: number (optional, nullable)
+//   - status: string (required) - 'pending' | 'in_progress' | 'completed'
+//   - orderIndex: number (optional, nullable)
+//   - createdAt: number/timestamp (required, immutable)
+//   - updatedAt: number/timestamp (optional)
+//   - isDeleted: bool (optional, nullable)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// Collection: users/{userId}/assignments/{assignmentId}/submissions/{subId}
+//         and users/{userId}/submissions/{subId}
+// Document ID: Submission UUID/ID
+// Fields:
+//   - id: string (required, immutable)
+//   - assignmentId: string (optional, nullable)
+//   - groupId: string (optional, nullable)
+//   - userId: string (required, immutable) - Matches parent userId
+//   - title: string (required)
+//   - deadline: string/timestamp (required)
+//   - createdAt: number/timestamp (required, immutable)
+//   - updatedAt: number/timestamp (optional)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// Collection: groups/{groupId}
+// Document ID: Group UUID/ID
+// Fields:
+//   - id: string (required, immutable)
+//   - name: string (required) - Group name
+//   - accessToken: string (required) - 6-digit join passcode
+//   - adminUserId: string (required, immutable) - UID of group admin
+//   - assignmentId: string (optional, nullable)
+//   - courseId: string (optional, nullable)
+//   - description: string (optional, nullable)
+//   - deadline: string/timestamp (optional, nullable)
+//   - priority: string (optional, nullable) - 'low' | 'medium' | 'high'
+//   - totalMarks: number (optional, nullable)
+//   - estimatedHours: number (optional, nullable)
+//   - estimatedDays: number (optional, nullable)
+//   - hoursPerDay: number (optional, nullable)
+//   - attachments: list (optional, nullable)
+//   - members: list/map (optional, nullable)
+//   - memberUserIds: list (optional, nullable) - List of member user IDs
+//   - activeMemberIds: list (optional, nullable) - List of approved member user IDs
+//   - tasks: list (optional, nullable)
+//   - createdAt: number/timestamp (optional, nullable)
+//   - updatedAt: number/timestamp (optional, nullable)
+//   - isDeleted: bool (optional, nullable)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// Collection: groups/{groupId}/tasks/{taskId}
+// Document ID: GroupTask UUID/ID
+// Fields:
+//   - id: string (required, immutable)
+//   - groupId: string (required, immutable) - Matches parent groupId
+//   - submissionId: string (optional, nullable)
+//   - title: string (required)
+//   - description: string (optional, nullable)
+//   - targetDate: string/timestamp (optional, nullable)
+//   - estimatedHours: number (optional, nullable)
+//   - status: string (required) - 'pending' | 'in_progress' | 'completed'
+//   - createdByUserId: string (required, immutable)
+//   - assignedUserIds: list (optional, nullable)
+//   - createdAt: number/timestamp (optional, immutable)
+//   - updatedAt: number/timestamp (optional)
+//   - isDeleted: bool (optional, nullable)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// Collection: groups/{groupId}/submissions/{subId}
+// Document ID: Group Submission UUID/ID
+// Fields:
+//   - id: string (required, immutable)
+//   - groupId: string (required, immutable) - Matches parent groupId
+//   - userId: string (required, immutable)
+//   - title: string (required)
+//   - deadline: string/timestamp (required)
+//   - createdAt: number/timestamp (required, immutable)
+//   - updatedAt: number/timestamp (optional)
+//   - serverUpdatedAt: timestamp (optional)
+//
+// ===============================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─── Helper Functions ──────────────────────────────────────────────────────
+    // ─── Core Helper Functions ────────────────────────────────────────────────
 
     function isAuthenticated() {
       return request.auth != null;
@@ -12,30 +155,426 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // ─── Users & Data Subcollections ──────────────────────────────────────────
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
 
-    // User profile document
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() >= 5 &&
+        email.size() <= 100 &&
+        email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+[.][a-zA-Z]{2,}$');
+    }
+
+    function isValidPriority(p) {
+      return p in ['low', 'medium', 'high'];
+    }
+
+    function isValidStatus(s) {
+      return s in ['pending', 'in_progress', 'completed'];
+    }
+
+    function isValidTime(val) {
+      return (val is number && val > 0) || val is timestamp;
+    }
+
+    function isValidDateStringOrTime(val) {
+      return (val is string && val.size() >= 1 && val.size() <= 50) || val is timestamp;
+    }
+
+    function isOptionalString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is string && data[field].size() >= minLen && data[field].size() <= maxLen);
+    }
+
+    function isOptionalNumber(data, field, minVal, maxVal) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is number && data[field] >= minVal && data[field] <= maxVal);
+    }
+
+    function isOptionalBool(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is bool;
+    }
+
+    function isOptionalList(data, field, maxElements) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is list && data[field].size() <= maxElements);
+    }
+
+    function isOptionalMap(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is map;
+    }
+
+    function isOptionalTime(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        isValidTime(data[field]);
+    }
+
+    function isOptionalDateStringOrTime(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        isValidDateStringOrTime(data[field]);
+    }
+
+    function isOptionalServerUpdatedAt(data) {
+      return !('serverUpdatedAt' in data) ||
+        data.serverUpdatedAt == null ||
+        data.serverUpdatedAt is timestamp;
+    }
+
+    // ─── Group Access Evaluation Helpers (ABAC) ───────────────────────────────
+
+    function isGroupAdmin(groupData) {
+      return isAuthenticated() &&
+        'adminUserId' in groupData &&
+        groupData.adminUserId is string &&
+        groupData.adminUserId == request.auth.uid;
+    }
+
+    function isGroupMember(groupData) {
+      return isAuthenticated() && (
+        isGroupAdmin(groupData) ||
+        (
+          'activeMemberIds' in groupData &&
+          groupData.activeMemberIds is list &&
+          request.auth.uid in groupData.activeMemberIds
+        ) ||
+        (
+          'memberUserIds' in groupData &&
+          groupData.memberUserIds is list &&
+          request.auth.uid in groupData.memberUserIds
+        ) ||
+        (
+          'members' in groupData &&
+          groupData.members is list &&
+          request.auth.uid in groupData.members
+        ) ||
+        (
+          'members' in groupData &&
+          groupData.members is map &&
+          request.auth.uid in groupData.members
+        )
+      );
+    }
+
+    function groupDocPath(groupId) {
+      return /databases/$(database)/documents/groups/$(groupId);
+    }
+
+    function isGroupActiveMemberOrAdmin(groupId) {
+      return isAuthenticated() &&
+        exists(groupDocPath(groupId)) &&
+        (
+          get(groupDocPath(groupId)).data.adminUserId == request.auth.uid ||
+          (
+            'activeMemberIds' in get(groupDocPath(groupId)).data &&
+            get(groupDocPath(groupId)).data.activeMemberIds is list &&
+            request.auth.uid in get(groupDocPath(groupId)).data.activeMemberIds
+          ) ||
+          (
+            'memberUserIds' in get(groupDocPath(groupId)).data &&
+            get(groupDocPath(groupId)).data.memberUserIds is list &&
+            request.auth.uid in get(groupDocPath(groupId)).data.memberUserIds
+          ) ||
+          (
+            'members' in get(groupDocPath(groupId)).data &&
+            get(groupDocPath(groupId)).data.members is list &&
+            request.auth.uid in get(groupDocPath(groupId)).data.members
+          ) ||
+          (
+            'members' in get(groupDocPath(groupId)).data &&
+            get(groupDocPath(groupId)).data.members is map &&
+            request.auth.uid in get(groupDocPath(groupId)).data.members &&
+            get(groupDocPath(groupId)).data.members[request.auth.uid] in ['approved', 'active', 'member', 'admin', true]
+          )
+        );
+    }
+
+    // ─── Domain Validators ────────────────────────────────────────────────────
+
+    function isValidUserProfile(data) {
+      return hasRequiredFields(['id', 'email', 'username', 'createdAt']) &&
+        hasOnlyAllowedFields(['id', 'email', 'username', 'name', 'avatarColor', 'createdAt', 'updatedAt', 'serverUpdatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        isValidEmail(data.email) &&
+        data.username is string && data.username.size() >= 1 && data.username.size() <= 50 &&
+        isValidTime(data.createdAt) &&
+        isOptionalString(data, 'name', 1, 100) &&
+        isOptionalString(data, 'avatarColor', 1, 30) &&
+        isOptionalTime(data, 'updatedAt') &&
+        isOptionalServerUpdatedAt(data);
+    }
+
+    function isValidCourse(data) {
+      return hasRequiredFields(['id', 'userId', 'code', 'title', 'color', 'createdAt']) &&
+        hasOnlyAllowedFields(['id', 'userId', 'code', 'title', 'color', 'createdAt', 'updatedAt', 'isDeleted', 'serverUpdatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 100 &&
+        data.code is string && data.code.size() >= 1 && data.code.size() <= 50 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.color is string && data.color.size() >= 1 && data.color.size() <= 30 &&
+        isValidTime(data.createdAt) &&
+        isOptionalTime(data, 'updatedAt') &&
+        isOptionalBool(data, 'isDeleted') &&
+        isOptionalServerUpdatedAt(data);
+    }
+
+    function isValidAssignment(data) {
+      return hasRequiredFields(['id', 'userId', 'title', 'priority', 'deadline', 'status', 'createdAt']) &&
+        hasOnlyAllowedFields(['id', 'userId', 'courseId', 'title', 'description', 'sourceUrl', 'priority', 'totalMarks', 'deadline', 'estimatedHours', 'estimatedDays', 'hoursPerDay', 'status', 'attachments', 'createdAt', 'updatedAt', 'isDeleted', 'serverUpdatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 100 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        isValidPriority(data.priority) &&
+        isValidDateStringOrTime(data.deadline) &&
+        isValidStatus(data.status) &&
+        isValidTime(data.createdAt) &&
+        isOptionalString(data, 'courseId', 1, 100) &&
+        isOptionalString(data, 'description', 0, 5000) &&
+        isOptionalString(data, 'sourceUrl', 0, 1000) &&
+        isOptionalNumber(data, 'totalMarks', 0, 1000) &&
+        isOptionalNumber(data, 'estimatedHours', 0, 1000) &&
+        isOptionalNumber(data, 'estimatedDays', 0, 365) &&
+        isOptionalNumber(data, 'hoursPerDay', 0, 24) &&
+        isOptionalList(data, 'attachments', 20) &&
+        isOptionalTime(data, 'updatedAt') &&
+        isOptionalBool(data, 'isDeleted') &&
+        isOptionalServerUpdatedAt(data);
+    }
+
+    function isValidTask(data) {
+      return hasRequiredFields(['id', 'userId', 'title', 'status', 'createdAt']) &&
+        hasOnlyAllowedFields(['id', 'assignmentId', 'submissionId', 'userId', 'title', 'description', 'targetDate', 'estimatedHours', 'status', 'orderIndex', 'createdAt', 'updatedAt', 'isDeleted', 'serverUpdatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 100 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        isValidStatus(data.status) &&
+        isValidTime(data.createdAt) &&
+        isOptionalString(data, 'assignmentId', 1, 100) &&
+        isOptionalString(data, 'submissionId', 1, 100) &&
+        isOptionalString(data, 'description', 0, 5000) &&
+        isOptionalDateStringOrTime(data, 'targetDate') &&
+        isOptionalNumber(data, 'estimatedHours', 0, 1000) &&
+        isOptionalNumber(data, 'orderIndex', 0, 10000) &&
+        isOptionalTime(data, 'updatedAt') &&
+        isOptionalBool(data, 'isDeleted') &&
+        isOptionalServerUpdatedAt(data);
+    }
+
+    function isValidSubmission(data) {
+      return hasRequiredFields(['id', 'title', 'deadline', 'createdAt']) &&
+        hasOnlyAllowedFields(['id', 'assignmentId', 'groupId', 'userId', 'title', 'deadline', 'createdAt', 'updatedAt', 'serverUpdatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        isValidDateStringOrTime(data.deadline) &&
+        isValidTime(data.createdAt) &&
+        isOptionalString(data, 'assignmentId', 1, 100) &&
+        isOptionalString(data, 'groupId', 1, 100) &&
+        isOptionalString(data, 'userId', 1, 100) &&
+        isOptionalTime(data, 'updatedAt') &&
+        isOptionalServerUpdatedAt(data);
+    }
+
+    function isValidGroup(data) {
+      return hasRequiredFields(['id', 'name', 'accessToken', 'adminUserId']) &&
+        hasOnlyAllowedFields(['id', 'name', 'accessToken', 'adminUserId', 'assignmentId', 'courseId', 'description', 'deadline', 'priority', 'totalMarks', 'estimatedHours', 'estimatedDays', 'hoursPerDay', 'attachments', 'members', 'memberUserIds', 'activeMemberIds', 'tasks', 'createdAt', 'updatedAt', 'isDeleted', 'serverUpdatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.accessToken is string && data.accessToken.size() >= 1 && data.accessToken.size() <= 20 &&
+        data.adminUserId is string && data.adminUserId.size() >= 1 && data.adminUserId.size() <= 100 &&
+        isOptionalString(data, 'assignmentId', 1, 100) &&
+        isOptionalString(data, 'courseId', 1, 100) &&
+        isOptionalString(data, 'description', 0, 5000) &&
+        isOptionalDateStringOrTime(data, 'deadline') &&
+        (!( 'priority' in data ) || data.priority == null || isValidPriority(data.priority)) &&
+        isOptionalNumber(data, 'totalMarks', 0, 1000) &&
+        isOptionalNumber(data, 'estimatedHours', 0, 1000) &&
+        isOptionalNumber(data, 'estimatedDays', 0, 365) &&
+        isOptionalNumber(data, 'hoursPerDay', 0, 24) &&
+        isOptionalList(data, 'attachments', 20) &&
+        (isOptionalList(data, 'members', 100) || isOptionalMap(data, 'members')) &&
+        isOptionalList(data, 'memberUserIds', 100) &&
+        isOptionalList(data, 'activeMemberIds', 100) &&
+        isOptionalList(data, 'tasks', 200) &&
+        isOptionalTime(data, 'createdAt') &&
+        isOptionalTime(data, 'updatedAt') &&
+        isOptionalBool(data, 'isDeleted') &&
+        isOptionalServerUpdatedAt(data);
+    }
+
+    function isValidGroupTask(data) {
+      return hasRequiredFields(['id', 'groupId', 'title', 'status', 'createdByUserId']) &&
+        hasOnlyAllowedFields(['id', 'groupId', 'submissionId', 'title', 'description', 'targetDate', 'estimatedHours', 'status', 'createdByUserId', 'assignedUserIds', 'createdAt', 'updatedAt', 'isDeleted', 'serverUpdatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.groupId is string && data.groupId.size() >= 1 && data.groupId.size() <= 100 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        isValidStatus(data.status) &&
+        data.createdByUserId is string && data.createdByUserId.size() >= 1 && data.createdByUserId.size() <= 100 &&
+        isOptionalString(data, 'submissionId', 1, 100) &&
+        isOptionalString(data, 'description', 0, 5000) &&
+        isOptionalDateStringOrTime(data, 'targetDate') &&
+        isOptionalNumber(data, 'estimatedHours', 0, 1000) &&
+        isOptionalList(data, 'assignedUserIds', 50) &&
+        isOptionalTime(data, 'createdAt') &&
+        isOptionalTime(data, 'updatedAt') &&
+        isOptionalBool(data, 'isDeleted') &&
+        isOptionalServerUpdatedAt(data);
+    }
+
+    // ─── Users & Private Data Collections ─────────────────────────────────────
+
     match /users/{userId} {
-      // Anyone logged in can view profiles (e.g. for collaboration / study groups)
-      allow read: if isAuthenticated();
-      // Only the account owner can modify their profile
-      allow write: if isOwner(userId);
+      // User profile document contains email (PII) - access restricted to owner only
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        isValidUserProfile(request.resource.data) &&
+        request.resource.data.id == userId;
+      allow update: if isOwner(userId) &&
+        isValidUserProfile(request.resource.data) &&
+        areImmutableFieldsUnchanged(['id', 'createdAt']);
+      allow delete: if isOwner(userId);
 
       // User's private courses
       match /courses/{courseId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidCourse(request.resource.data) &&
+          request.resource.data.userId == userId;
+        allow update: if isOwner(userId) &&
+          isValidCourse(request.resource.data) &&
+          areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+        allow delete: if isOwner(userId);
       }
 
       // User's private assignments
       match /assignments/{assignmentId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidAssignment(request.resource.data) &&
+          request.resource.data.userId == userId;
+        allow update: if isOwner(userId) &&
+          isValidAssignment(request.resource.data) &&
+          areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+        allow delete: if isOwner(userId);
 
-        // Subtasks under assignment
-        match /tasks/{taskId} {
-          allow read, write: if isOwner(userId);
+        // Submissions nested under assignment
+        match /submissions/{subId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) &&
+            isValidSubmission(request.resource.data) &&
+            request.resource.data.userId == userId;
+          allow update: if isOwner(userId) &&
+            isValidSubmission(request.resource.data) &&
+            areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+          allow delete: if isOwner(userId);
         }
+
+        // Subtasks nested under assignment
+        match /tasks/{taskId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) &&
+            isValidTask(request.resource.data) &&
+            request.resource.data.userId == userId;
+          allow update: if isOwner(userId) &&
+            isValidTask(request.resource.data) &&
+            areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+          allow delete: if isOwner(userId);
+        }
+      }
+
+      // User's direct private submissions
+      match /submissions/{subId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidSubmission(request.resource.data) &&
+          request.resource.data.userId == userId;
+        allow update: if isOwner(userId) &&
+          isValidSubmission(request.resource.data) &&
+          areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      // User's direct private tasks
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidTask(request.resource.data) &&
+          request.resource.data.userId == userId;
+        allow update: if isOwner(userId) &&
+          isValidTask(request.resource.data) &&
+          areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // ─── Group Workspaces & Collaborative Subcollections ──────────────────────
+
+    match /groups/{groupId} {
+      // Authenticated users can view groups (e.g. to browse or join via access token)
+      allow read: if isAuthenticated();
+
+      // Authenticated users can create groups as the initial admin
+      allow create: if isAuthenticated() &&
+        isValidGroup(request.resource.data) &&
+        request.resource.data.adminUserId == request.auth.uid &&
+        request.resource.data.id == groupId;
+
+      // Updating group metadata or membership is restricted to the admin or members
+      allow update: if isAuthenticated() &&
+        (isGroupAdmin(resource.data) || isGroupMember(resource.data)) &&
+        isValidGroup(request.resource.data) &&
+        request.resource.data.adminUserId == resource.data.adminUserId &&
+        areImmutableFieldsUnchanged(['id']);
+
+      // Only the group admin can delete the group
+      allow delete: if isAuthenticated() &&
+        resource.data.adminUserId == request.auth.uid;
+
+      // Group Tasks: Active members or admin can read and write
+      match /tasks/{taskId} {
+        allow read: if isGroupActiveMemberOrAdmin(groupId);
+        allow create: if isGroupActiveMemberOrAdmin(groupId) &&
+          isValidGroupTask(request.resource.data) &&
+          request.resource.data.groupId == groupId;
+        allow update: if isGroupActiveMemberOrAdmin(groupId) &&
+          isValidGroupTask(request.resource.data) &&
+          areImmutableFieldsUnchanged(['id', 'groupId', 'createdByUserId', 'createdAt']);
+        allow delete: if isGroupActiveMemberOrAdmin(groupId);
+      }
+
+      // Group Submissions: Active members or admin can read and write
+      match /submissions/{subId} {
+        allow read: if isGroupActiveMemberOrAdmin(groupId);
+        allow create: if isGroupActiveMemberOrAdmin(groupId) &&
+          isValidSubmission(request.resource.data) &&
+          request.resource.data.groupId == groupId;
+        allow update: if isGroupActiveMemberOrAdmin(groupId) &&
+          isValidSubmission(request.resource.data) &&
+          areImmutableFieldsUnchanged(['id', 'groupId', 'userId', 'createdAt']);
+        allow delete: if isGroupActiveMemberOrAdmin(groupId);
+      }
+
+      // Group Members subcollection (optional future expansion)
+      match /members/{memberId} {
+        allow read: if isGroupActiveMemberOrAdmin(groupId);
+        allow write: if isGroupActiveMemberOrAdmin(groupId);
       }
     }
   }
 }
-

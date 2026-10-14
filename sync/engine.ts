@@ -114,10 +114,20 @@ export async function processSyncQueue(userId: string): Promise<{
       queueRepo.markCompleted(op.id);
       processedCount++;
       emitSyncEvent({ type: 'sync:progress', processed: processedCount, total: pending.length });
-    } catch (err) {
+    } catch (err: unknown) {
       failedCount++;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[SyncEngine] Operation ${op.id} failed:`, msg);
+      const errorObj = err as { code?: string; message?: string };
+      const msg = errorObj.message || String(err);
+      if (
+        errorObj.code === 'permission-denied' ||
+        msg.toLowerCase().includes('permission')
+      ) {
+        console.warn(
+          `[SyncEngine] Firestore permission denied for operation ${op.id}. Changes remain safely saved in local SQLite.`
+        );
+      } else {
+        console.warn(`[SyncEngine] Operation ${op.id} failed:`, msg);
+      }
       queueRepo.markFailed(op.id, msg);
     }
   }
@@ -160,8 +170,20 @@ export async function pullFromFirestore(userId: string): Promise<void> {
     void queryClient.invalidateQueries({ queryKey: ['assignments'] });
     void queryClient.invalidateQueries({ queryKey: ['courses'] });
     void queryClient.invalidateQueries({ queryKey: ['tasks'] });
-  } catch (error) {
-    console.error('[SyncEngine] pullFromFirestore failed:', error);
+  } catch (error: unknown) {
+    const errorObj = error as { code?: string; message?: string };
+    const msg = errorObj.message || String(error);
+    if (
+      errorObj.code === 'permission-denied' ||
+      msg.toLowerCase().includes('permission')
+    ) {
+      console.warn(
+        '[SyncEngine] Firestore permission denied. Check Firestore Security Rules in Firebase Console. Local SQLite storage active.'
+      );
+      useSyncStore.getState().markError('Pending Firestore Rules update in Firebase Console');
+    } else {
+      console.warn('[SyncEngine] pullFromFirestore:', msg);
+    }
   }
 }
 
@@ -183,15 +205,22 @@ export async function syncNow(userId: string): Promise<void> {
     await pullFromFirestore(userId);
 
     if (result.failed > 0) {
-      syncStore.markError(`${result.failed} operations failed to sync.`);
-      emitSyncEvent({ type: 'sync:error', error: `${result.failed} items failed` });
+      const isPermissionIssue = getSyncQueueRepository()
+        .findFailed(userId)
+        .some((f) => f.errorMessage?.toLowerCase().includes('permission'));
+      const statusMsg = isPermissionIssue
+        ? 'Pending Firestore Rules in Firebase Console'
+        : `${result.failed} items pending sync`;
+      syncStore.markError(statusMsg);
+      emitSyncEvent({ type: 'sync:error', error: statusMsg });
     } else {
       syncStore.markSynced();
       getSyncQueueRepository().setLastSyncedAt(userId, Date.now());
       emitSyncEvent({ type: 'sync:complete' });
     }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Sync failed';
+  } catch (error: unknown) {
+    const errorObj = error as { code?: string; message?: string };
+    const msg = errorObj.message || String(error);
     syncStore.markError(msg);
     emitSyncEvent({ type: 'sync:error', error: msg });
   } finally {

@@ -12,7 +12,9 @@ import { firebaseAuth, isFirebaseConfigured } from './firebase.config';
 import {
   saveUserProfileToFirestore,
   fetchUserProfileFromFirestore,
+  checkFirestoreUsernameTaken,
 } from './firestore.service';
+import { getDatabase } from '../database';
 
 /**
  * Auth Service
@@ -27,6 +29,66 @@ interface StoredUser extends User {
 
 interface UsersRegistry {
   users: StoredUser[];
+}
+
+export async function saveUserToLocalDatabase(user: User): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync(
+      `INSERT INTO users (id, username, email, name, avatar_color, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         username = excluded.username,
+         email = excluded.email,
+         name = excluded.name,
+         avatar_color = excluded.avatar_color;`,
+      [
+        user.id,
+        user.username,
+        user.email,
+        user.name ?? null,
+        user.avatarColor ?? '#3B82F6',
+        user.createdAt || Date.now(),
+      ]
+    );
+  } catch (err) {
+    console.warn('[AuthService] Could not save user to local SQLite:', err);
+  }
+}
+
+export async function isUsernameTaken(username: string): Promise<boolean> {
+  const clean = username.trim().toLowerCase();
+  if (!clean) return false;
+
+  // 1. Check local SQLite users table
+  try {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM users WHERE LOWER(username) = LOWER(?);',
+      [clean]
+    );
+    if (row && row.count > 0) return true;
+  } catch {
+    // ignore
+  }
+
+  // 2. Check local registry (AsyncStorage fallback)
+  const registry = await getRegistry();
+  if (registry.users.some((u) => u.username.toLowerCase() === clean)) {
+    return true;
+  }
+
+  // 3. Check Firestore
+  if (isFirebaseConfigured()) {
+    try {
+      const taken = await checkFirestoreUsernameTaken(clean);
+      if (taken) return true;
+    } catch {
+      // offline fallback
+    }
+  }
+
+  return false;
 }
 
 // ─── Session Persistence ──────────────────────────────────────────────────────
@@ -108,6 +170,12 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
   const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)] ?? '#3B82F6';
   const now = Date.now();
 
+  // 0. Ensure username is unique before proceeding
+  const taken = await isUsernameTaken(input.username);
+  if (taken) {
+    return { session: null, error: 'This username is already taken. Please choose another username.' };
+  }
+
   // 1. Try Firebase Auth if configured
   if (isFirebaseConfigured() && firebaseAuth) {
     try {
@@ -132,6 +200,9 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
       } catch (err) {
         console.warn('[AuthService] Failed to save profile to Firestore:', err);
       }
+
+      // Save to local SQLite database
+      await saveUserToLocalDatabase(user);
 
       const token = await cred.user.getIdToken();
       const session: AuthSession = {
@@ -165,7 +236,7 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
   }
 
   if (registry.users.some((u) => u.username.toLowerCase() === input.username.toLowerCase())) {
-    return { session: null, error: 'This username is already taken.' };
+    return { session: null, error: 'This username is already taken. Please choose another username.' };
   }
 
   const newUser: StoredUser = {
@@ -182,6 +253,10 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
   await saveRegistry(registry);
 
   const { passwordHash: _ph, ...user } = newUser;
+
+  // Save to local SQLite database
+  await saveUserToLocalDatabase(user);
+
   const session: AuthSession = {
     token: `local-token-${newUser.id}`,
     user,
@@ -229,6 +304,7 @@ export async function login(input: LoginInput): Promise<AuthResult> {
         expiresAt: now + 30 * 24 * 60 * 60 * 1000,
       };
 
+      await saveUserToLocalDatabase(user);
       await saveSession(session);
       return { session, error: null };
     } catch (firebaseErr: unknown) {
@@ -261,6 +337,7 @@ export async function login(input: LoginInput): Promise<AuthResult> {
     expiresAt: now + 30 * 24 * 60 * 60 * 1000,
   };
 
+  await saveUserToLocalDatabase(user);
   await saveSession(session);
   return { session, error: null };
 }

@@ -35,6 +35,15 @@ export interface Course {
   isDeleted: boolean;
 }
 
+export interface AttachmentItem {
+  id: string;
+  name: string;
+  uri: string;
+  type: 'image' | 'document';
+  size?: number;
+  mimeType?: string;
+}
+
 export interface Assignment {
   id: string;
   userId: string;
@@ -45,8 +54,11 @@ export interface Assignment {
   priority: Priority;
   totalMarks?: number;
   deadline: string;          // ISO 8601 string
-  estimatedHours?: number;
+  estimatedHours?: number;   // total workload hours
+  estimatedDays?: number;    // estimated days planned for this assignment
+  hoursPerDay?: number;      // estimated hours per day
   status: AssignmentStatus;
+  attachments?: AttachmentItem[];
   createdAt: number;
   updatedAt: number;
   isSynced: boolean;
@@ -72,7 +84,8 @@ export interface Task {
 
 export interface Submission {
   id: string;
-  assignmentId: string;
+  assignmentId?: string;
+  groupId?: string;
   userId: string;
   title: string;
   deadline: string;          // ISO 8601 string
@@ -87,15 +100,34 @@ export interface Group {
   accessToken: string;       // 6-digit token for joining
   adminUserId: string;
   assignmentId?: string;     // optional linked assignment
+  courseId?: string;
+  description?: string;
+  deadline?: string;         // ISO 8601
+  priority?: Priority;
+  totalMarks?: number;
+  estimatedHours?: number;
+  estimatedDays?: number;
+  hoursPerDay?: number;
+  attachments?: AttachmentItem[];
   createdAt: number;
   updatedAt: number;
   isSynced: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  email: string;
+  name?: string;
+  avatarColor?: string;
+  createdAt: number;
 }
 
 export interface GroupMember {
   id: string;
   groupId: string;
   userId: string;
+  username?: string;
   status: GroupMemberStatus;
   joinedAt?: number;
 }
@@ -103,9 +135,11 @@ export interface GroupMember {
 export interface GroupTask {
   id: string;
   groupId: string;
+  submissionId?: string;     // links to phased submission (e.g. submission_1, submission_2)
   title: string;
   description?: string;
   targetDate?: string;
+  estimatedHours?: number;
   status: TaskStatus;
   createdByUserId: string;
   createdAt: number;
@@ -181,4 +215,7 @@ export type UpdateAssignmentInput = Partial<Omit<Assignment, 'id' | 'userId' | '
 
 export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'isSynced' | 'isDeleted'>;
 export type UpdateTaskInput = Partial<Omit<Task, 'id' | 'userId' | 'assignmentId' | 'createdAt' | 'isSynced'>>;
+
+export type CreateGroupInput = Omit<Group, 'id' | 'accessToken' | 'createdAt' | 'updatedAt' | 'isSynced'>;
+export type UpdateGroupInput = Partial<Omit<Group, 'id' | 'adminUserId' | 'accessToken' | 'createdAt' | 'isSynced'>>;
 

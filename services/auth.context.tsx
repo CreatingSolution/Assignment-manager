@@ -13,7 +13,6 @@ import {
   login,
   logout,
   register,
-  saveSession,
   type LoginInput,
   type RegisterInput,
 } from './auth.service';
@@ -111,4 +110,3 @@ export function useAuth(): AuthContextValue {
 }
 
 export type { User, AuthSession };
-

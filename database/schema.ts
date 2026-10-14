@@ -32,7 +32,10 @@ export const SQL_CREATE_ASSIGNMENTS = `
     total_marks      REAL,
     deadline         TEXT    NOT NULL,
     estimated_hours  REAL,
+    estimated_days   REAL,
+    hours_per_day    REAL,
     status           TEXT    NOT NULL DEFAULT 'pending',
+    attachments      TEXT,
     created_at       INTEGER NOT NULL,
     updated_at       INTEGER NOT NULL,
     is_synced        INTEGER NOT NULL DEFAULT 0,
@@ -64,27 +67,47 @@ export const SQL_CREATE_TASKS = `
 export const SQL_CREATE_SUBMISSIONS = `
   CREATE TABLE IF NOT EXISTS submissions (
     id            TEXT    NOT NULL PRIMARY KEY,
-    assignment_id TEXT    NOT NULL,
+    assignment_id TEXT,
+    group_id      TEXT,
     user_id       TEXT    NOT NULL,
     title         TEXT    NOT NULL,
     deadline      TEXT    NOT NULL,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL,
-    is_synced     INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+    is_synced     INTEGER NOT NULL DEFAULT 0
   )
 `;
 
 export const SQL_CREATE_GROUPS = `
   CREATE TABLE IF NOT EXISTS groups (
-    id            TEXT    NOT NULL PRIMARY KEY,
-    name          TEXT    NOT NULL,
-    access_token  TEXT    NOT NULL UNIQUE,
-    admin_user_id TEXT    NOT NULL,
-    assignment_id TEXT,
-    created_at    INTEGER NOT NULL,
-    updated_at    INTEGER NOT NULL,
-    is_synced     INTEGER NOT NULL DEFAULT 0
+    id              TEXT    NOT NULL PRIMARY KEY,
+    name            TEXT    NOT NULL,
+    access_token    TEXT    NOT NULL UNIQUE,
+    admin_user_id   TEXT    NOT NULL,
+    assignment_id   TEXT,
+    course_id       TEXT,
+    description     TEXT,
+    deadline        TEXT,
+    priority        TEXT    NOT NULL DEFAULT 'medium',
+    total_marks     REAL,
+    estimated_hours REAL,
+    estimated_days  REAL,
+    hours_per_day   REAL,
+    attachments     TEXT,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    is_synced       INTEGER NOT NULL DEFAULT 0
+  )
+`;
+
+export const SQL_CREATE_USERS = `
+  CREATE TABLE IF NOT EXISTS users (
+    id           TEXT    NOT NULL PRIMARY KEY,
+    username     TEXT    NOT NULL UNIQUE,
+    email        TEXT    NOT NULL,
+    name         TEXT,
+    avatar_color TEXT    NOT NULL DEFAULT '#3B82F6',
+    created_at   INTEGER NOT NULL
   )
 `;
 
@@ -93,6 +116,7 @@ export const SQL_CREATE_GROUP_MEMBERS = `
     id         TEXT    NOT NULL PRIMARY KEY,
     group_id   TEXT    NOT NULL,
     user_id    TEXT    NOT NULL,
+    username   TEXT,
     status     TEXT    NOT NULL DEFAULT 'pending',
     joined_at  INTEGER,
     FOREIGN KEY (group_id) REFERENCES groups(id)
@@ -103,9 +127,11 @@ export const SQL_CREATE_GROUP_TASKS = `
   CREATE TABLE IF NOT EXISTS group_tasks (
     id                  TEXT    NOT NULL PRIMARY KEY,
     group_id            TEXT    NOT NULL,
+    submission_id       TEXT,
     title               TEXT    NOT NULL,
     description         TEXT,
     target_date         TEXT,
+    estimated_hours     REAL,
     status              TEXT    NOT NULL DEFAULT 'pending',
     created_by_user_id  TEXT    NOT NULL,
     created_at          INTEGER NOT NULL,
@@ -174,12 +200,14 @@ export const SQL_INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)`,
   `CREATE INDEX IF NOT EXISTS idx_calendar_events_user_id ON calendar_events(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
 ];
 
 /**
  * Ordered list of all CREATE TABLE statements for the migration runner.
  */
 export const ALL_CREATE_TABLES = [
+  SQL_CREATE_USERS,
   SQL_CREATE_COURSES,
   SQL_CREATE_ASSIGNMENTS,
   SQL_CREATE_SUBMISSIONS,

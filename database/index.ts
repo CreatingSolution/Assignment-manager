@@ -5,6 +5,9 @@ import { AssignmentRepository } from './repositories/assignment.repository';
 import { CourseRepository } from './repositories/course.repository';
 import { SyncQueueRepository } from './repositories/sync-queue.repository';
 import { TaskRepository } from './repositories/task.repository';
+import { SubmissionRepository } from './repositories/submission.repository';
+import { GroupRepository } from './repositories/group.repository';
+import { CalendarRepository } from './repositories/calendar.repository';
 
 // ─── Singleton DB Instance ────────────────────────────────────────────────────
 
@@ -40,6 +43,9 @@ let _courseRepo: CourseRepository | null = null;
 let _assignmentRepo: AssignmentRepository | null = null;
 let _taskRepo: TaskRepository | null = null;
 let _syncQueueRepo: SyncQueueRepository | null = null;
+let _submissionRepo: SubmissionRepository | null = null;
+let _groupRepo: GroupRepository | null = null;
+let _calendarRepo: CalendarRepository | null = null;
 
 export function getCourseRepository(): CourseRepository {
   if (!_courseRepo) _courseRepo = new CourseRepository(getDatabase());
@@ -61,10 +67,29 @@ export function getSyncQueueRepository(): SyncQueueRepository {
   return _syncQueueRepo;
 }
 
+export function getSubmissionRepository(): SubmissionRepository {
+  if (!_submissionRepo) _submissionRepo = new SubmissionRepository(getDatabase());
+  return _submissionRepo;
+}
+
+export function getGroupRepository(): GroupRepository {
+  if (!_groupRepo) _groupRepo = new GroupRepository(getDatabase());
+  return _groupRepo;
+}
+
+export function getCalendarRepository(): CalendarRepository {
+  if (!_calendarRepo) _calendarRepo = new CalendarRepository(getDatabase());
+  return _calendarRepo;
+}
+
 // ─── Barrel Exports ───────────────────────────────────────────────────────────
 
 export { AssignmentRepository } from './repositories/assignment.repository';
 export { CourseRepository } from './repositories/course.repository';
 export { SyncQueueRepository } from './repositories/sync-queue.repository';
 export { TaskRepository } from './repositories/task.repository';
+export { SubmissionRepository } from './repositories/submission.repository';
+export { GroupRepository } from './repositories/group.repository';
+export { CalendarRepository } from './repositories/calendar.repository';
+
 

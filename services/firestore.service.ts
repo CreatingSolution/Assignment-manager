@@ -10,7 +10,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { firestoreDb, isFirebaseConfigured } from './firebase.config';
-import type { Assignment, Course, Task, User } from '../types';
+import type { Assignment, Course, Submission, Task, User } from '../types';
 
 /**
  * Cloud Firestore Service
@@ -92,6 +92,8 @@ export async function syncAssignmentToFirestore(
       totalMarks: assignment.totalMarks ?? null,
       deadline: assignment.deadline,
       estimatedHours: assignment.estimatedHours ?? null,
+      estimatedDays: assignment.estimatedDays ?? null,
+      hoursPerDay: assignment.hoursPerDay ?? null,
       status: assignment.status,
       createdAt: assignment.createdAt,
       updatedAt: assignment.updatedAt,
@@ -259,6 +261,8 @@ export async function fetchRemoteUserData(userId: string): Promise<RemoteUserDat
       totalMarks: aData.totalMarks ?? undefined,
       deadline: aData.deadline ?? new Date().toISOString(),
       estimatedHours: aData.estimatedHours ?? undefined,
+      estimatedDays: aData.estimatedDays ?? undefined,
+      hoursPerDay: aData.hoursPerDay ?? undefined,
       status: aData.status ?? 'pending',
       createdAt: aData.createdAt ?? Date.now(),
       updatedAt: aData.updatedAt ?? Date.now(),
@@ -297,4 +301,123 @@ export async function fetchRemoteUserData(userId: string): Promise<RemoteUserDat
 
   return { assignments, courses, tasks };
 }
+
+// ─── Submissions ──────────────────────────────────────────────────────────────
+
+export async function syncSubmissionToFirestore(
+  userId: string,
+  submission: Submission
+): Promise<void> {
+  const db = getDb();
+  if (submission.assignmentId) {
+    const subRef = doc(
+      db,
+      'users',
+      userId,
+      'assignments',
+      submission.assignmentId,
+      'submissions',
+      submission.id
+    );
+    await setDoc(
+      subRef,
+      {
+        id: submission.id,
+        assignmentId: submission.assignmentId,
+        userId: submission.userId,
+        title: submission.title,
+        deadline: submission.deadline,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+        serverUpdatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } else if (submission.groupId) {
+    const subRef = doc(
+      db,
+      'groups',
+      submission.groupId,
+      'submissions',
+      submission.id
+    );
+    await setDoc(
+      subRef,
+      {
+        id: submission.id,
+        groupId: submission.groupId,
+        userId: submission.userId,
+        title: submission.title,
+        deadline: submission.deadline,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+        serverUpdatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+}
+
+// ─── Group Assignments ────────────────────────────────────────────────────────
+
+export async function syncGroupToFirestore(
+  group: { id: string; name: string; accessToken: string; adminUserId: string; assignmentId?: string },
+  members: Array<{ id: string; groupId: string; userId: string; status: string; joinedAt?: number }>,
+  tasks: Array<{ id: string; groupId: string; title: string; description?: string; targetDate?: string; status: string; createdByUserId: string }>
+): Promise<void> {
+  const db = getDb();
+  const groupRef = doc(db, 'groups', group.id);
+  const memberUserIds = members.map((m) => m.userId);
+  const activeMemberIds = members
+    .filter((m) => m.status === 'approved' || m.status === 'active')
+    .map((m) => m.userId);
+
+  await setDoc(
+    groupRef,
+    {
+      id: group.id,
+      name: group.name,
+      accessToken: group.accessToken,
+      adminUserId: group.adminUserId,
+      assignmentId: group.assignmentId ?? null,
+      members,
+      memberUserIds,
+      activeMemberIds,
+      tasks,
+      serverUpdatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function deleteGroupFromFirestore(groupId: string): Promise<void> {
+  const db = getDb();
+  const groupRef = doc(db, 'groups', groupId);
+  await deleteDoc(groupRef);
+}
+
+export async function checkFirestoreUsernameTaken(username: string): Promise<boolean> {
+  if (!isFirebaseConfigured() || !firestoreDb) return false;
+  try {
+    const clean = username.trim().toLowerCase();
+    // Query users collection for username matches
+    const usersRef = collection(firestoreDb, 'users');
+    const q = query(usersRef, where('username', '==', clean));
+    const snap = await getDocs(q);
+    if (!snap.empty) return true;
+
+    // Check with original casing as well in case saved without lowercase
+    if (clean !== username.trim()) {
+      const qOriginal = query(usersRef, where('username', '==', username.trim()));
+      const snapOriginal = await getDocs(qOriginal);
+      if (!snapOriginal.empty) return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.warn('[Firestore] checkFirestoreUsernameTaken warning:', error);
+    return false;
+  }
+}
+
 

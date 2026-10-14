@@ -111,6 +111,16 @@ export class SyncQueueRepository {
     );
   }
 
+  findFailed(userId: string): SyncOperation[] {
+    const rows = this.db.getAllSync<SyncQueueRow>(
+      `SELECT * FROM sync_queue
+       WHERE user_id = ? AND status = 'failed'
+       ORDER BY created_at ASC`,
+      [userId]
+    );
+    return rows.map(mapRow);
+  }
+
   resetStuck(): void {
     // Reset in_progress items from previous crashed session
     this.db.runSync(

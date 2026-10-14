@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Assignment, CreateAssignmentInput, UpdateAssignmentInput } from '../../types';
+import type { Assignment, AttachmentItem, CreateAssignmentInput, UpdateAssignmentInput } from '../../types';
 import { generateId } from '../../utils/id.utils';
 
 interface AssignmentRow {
@@ -13,6 +13,9 @@ interface AssignmentRow {
   total_marks: number | null;
   deadline: string;
   estimated_hours: number | null;
+  estimated_days: number | null;
+  hours_per_day: number | null;
+  attachments: string | null;
   status: string;
   created_at: number;
   updated_at: number;
@@ -21,6 +24,15 @@ interface AssignmentRow {
 }
 
 function mapRow(row: AssignmentRow): Assignment {
+  let parsedAttachments: AttachmentItem[] | undefined = undefined;
+  if (row.attachments) {
+    try {
+      parsedAttachments = JSON.parse(row.attachments);
+    } catch {
+      parsedAttachments = undefined;
+    }
+  }
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -32,6 +44,9 @@ function mapRow(row: AssignmentRow): Assignment {
     totalMarks: row.total_marks ?? undefined,
     deadline: row.deadline,
     estimatedHours: row.estimated_hours ?? undefined,
+    estimatedDays: row.estimated_days ?? undefined,
+    hoursPerDay: row.hours_per_day ?? undefined,
+    attachments: parsedAttachments,
     status: row.status as Assignment['status'],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -77,9 +92,9 @@ export class AssignmentRepository {
     this.db.runSync(
       `INSERT INTO assignments
          (id, user_id, course_id, title, description, source_url, priority,
-          total_marks, deadline, estimated_hours, status,
+          total_marks, deadline, estimated_hours, estimated_days, hours_per_day, attachments, status,
           created_at, updated_at, is_synced, is_deleted)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
       [
         id,
         input.userId,
@@ -91,6 +106,9 @@ export class AssignmentRepository {
         input.totalMarks ?? null,
         input.deadline,
         input.estimatedHours ?? null,
+        input.estimatedDays ?? null,
+        input.hoursPerDay ?? null,
+        input.attachments && input.attachments.length > 0 ? JSON.stringify(input.attachments) : null,
         input.status,
         now,
         now,
@@ -103,6 +121,11 @@ export class AssignmentRepository {
     const current = this.findById(id);
     if (!current) return null;
     const now = Date.now();
+
+    const updatedAttachments = updates.attachments !== undefined
+      ? (updates.attachments && updates.attachments.length > 0 ? JSON.stringify(updates.attachments) : null)
+      : (current.attachments && current.attachments.length > 0 ? JSON.stringify(current.attachments) : null);
+
     this.db.runSync(
       `UPDATE assignments SET
         course_id       = ?,
@@ -113,19 +136,25 @@ export class AssignmentRepository {
         total_marks     = ?,
         deadline        = ?,
         estimated_hours = ?,
+        estimated_days  = ?,
+        hours_per_day   = ?,
+        attachments     = ?,
         status          = ?,
         updated_at      = ?,
         is_synced       = 0
        WHERE id = ?`,
       [
-        updates.courseId ?? current.courseId ?? null,
+        updates.courseId !== undefined ? (updates.courseId || null) : (current.courseId || null),
         updates.title ?? current.title,
-        updates.description ?? current.description ?? null,
-        updates.sourceUrl ?? current.sourceUrl ?? null,
+        updates.description !== undefined ? (updates.description || null) : (current.description || null),
+        updates.sourceUrl !== undefined ? (updates.sourceUrl || null) : (current.sourceUrl || null),
         updates.priority ?? current.priority,
-        updates.totalMarks ?? current.totalMarks ?? null,
+        updates.totalMarks !== undefined ? updates.totalMarks : (current.totalMarks ?? null),
         updates.deadline ?? current.deadline,
-        updates.estimatedHours ?? current.estimatedHours ?? null,
+        updates.estimatedHours !== undefined ? updates.estimatedHours : (current.estimatedHours ?? null),
+        updates.estimatedDays !== undefined ? updates.estimatedDays : (current.estimatedDays ?? null),
+        updates.hoursPerDay !== undefined ? updates.hoursPerDay : (current.hoursPerDay ?? null),
+        updatedAttachments,
         updates.status ?? current.status,
         now,
         id,
@@ -176,6 +205,10 @@ export class AssignmentRepository {
 
   upsert(assignment: Assignment): void {
     const existing = this.findById(assignment.id);
+    const attachmentsStr = assignment.attachments && assignment.attachments.length > 0
+      ? JSON.stringify(assignment.attachments)
+      : null;
+
     if (existing) {
       this.db.runSync(
         `UPDATE assignments SET
@@ -188,6 +221,9 @@ export class AssignmentRepository {
           total_marks     = ?,
           deadline        = ?,
           estimated_hours = ?,
+          estimated_days  = ?,
+          hours_per_day   = ?,
+          attachments     = ?,
           status          = ?,
           created_at      = ?,
           updated_at      = ?,
@@ -204,6 +240,9 @@ export class AssignmentRepository {
           assignment.totalMarks ?? null,
           assignment.deadline,
           assignment.estimatedHours ?? null,
+          assignment.estimatedDays ?? null,
+          assignment.hoursPerDay ?? null,
+          attachmentsStr,
           assignment.status,
           assignment.createdAt,
           assignment.updatedAt,
@@ -215,9 +254,9 @@ export class AssignmentRepository {
       this.db.runSync(
         `INSERT INTO assignments
            (id, user_id, course_id, title, description, source_url, priority,
-            total_marks, deadline, estimated_hours, status,
+            total_marks, deadline, estimated_hours, estimated_days, hours_per_day, attachments, status,
             created_at, updated_at, is_synced, is_deleted)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
         [
           assignment.id,
           assignment.userId,
@@ -229,6 +268,9 @@ export class AssignmentRepository {
           assignment.totalMarks ?? null,
           assignment.deadline,
           assignment.estimatedHours ?? null,
+          assignment.estimatedDays ?? null,
+          assignment.hoursPerDay ?? null,
+          attachmentsStr,
           assignment.status,
           assignment.createdAt,
           assignment.updatedAt,
