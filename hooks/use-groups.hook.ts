@@ -82,17 +82,19 @@ export interface CreateGroupPayload {
   attachments?: AttachmentItem[];
   submissions?: Array<{
     title: string;
-    deadline: string;
+    deadline?: string;
     tasks: Array<{
       title: string;
       targetDate?: string;
       estimatedHours?: number;
+      assignedUserIds?: string[];
     }>;
   }>;
   tasks?: Array<{
     title: string;
     targetDate?: string;
     estimatedHours?: number;
+    assignedUserIds?: string[];
   }>;
 }
 
@@ -147,7 +149,7 @@ export function useCreateGroup() {
                 targetDate: t.targetDate,
                 estimatedHours: t.estimatedHours,
                 createdByUserId: user.id,
-                assignedUserIds: [user.id],
+                assignedUserIds: t.assignedUserIds && t.assignedUserIds.length > 0 ? t.assignedUserIds : [],
               });
             }
           }
@@ -164,7 +166,7 @@ export function useCreateGroup() {
             targetDate: t.targetDate,
             estimatedHours: t.estimatedHours,
             createdByUserId: user.id,
-            assignedUserIds: [user.id],
+            assignedUserIds: t.assignedUserIds && t.assignedUserIds.length > 0 ? t.assignedUserIds : [],
           });
         }
       }

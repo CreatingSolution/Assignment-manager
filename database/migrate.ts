@@ -110,10 +110,32 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
 
     // 6. Safely reconcile columns on submissions table
     try {
-      const existingSubCols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(submissions);');
+      const existingSubCols = await db.getAllAsync<{ name: string; notnull: number }>('PRAGMA table_info(submissions);');
       const subColNames = new Set(existingSubCols.map((c) => c.name));
       if (!subColNames.has('group_id')) {
         await db.execAsync('ALTER TABLE submissions ADD COLUMN group_id TEXT;');
+      }
+
+      // Check if assignment_id has a legacy NOT NULL constraint (notnull === 1)
+      const assignmentIdCol = existingSubCols.find((c) => c.name === 'assignment_id');
+      if (assignmentIdCol && assignmentIdCol.notnull === 1) {
+        await db.execAsync(`
+          CREATE TABLE IF NOT EXISTS submissions_temp (
+            id            TEXT    NOT NULL PRIMARY KEY,
+            assignment_id TEXT,
+            group_id      TEXT,
+            user_id       TEXT    NOT NULL,
+            title         TEXT    NOT NULL,
+            deadline      TEXT    NOT NULL,
+            created_at    INTEGER NOT NULL,
+            updated_at    INTEGER NOT NULL,
+            is_synced     INTEGER NOT NULL DEFAULT 0
+          );
+          INSERT INTO submissions_temp (id, assignment_id, group_id, user_id, title, deadline, created_at, updated_at, is_synced)
+          SELECT id, assignment_id, group_id, user_id, title, deadline, created_at, updated_at, is_synced FROM submissions;
+          DROP TABLE submissions;
+          ALTER TABLE submissions_temp RENAME TO submissions;
+        `);
       }
     } catch {
       // Handled by ALL_CREATE_TABLES

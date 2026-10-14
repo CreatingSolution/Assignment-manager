@@ -1,12 +1,10 @@
 import {
   getAssignmentRepository,
-  getCalendarRepository,
   getGroupRepository,
   getSubmissionRepository,
   getTaskRepository,
 } from '../database';
 import type { Assignment, Priority, Task } from '../types';
-import { getCalendarBusyHours } from './microsoft-calendar.service';
 
 export interface SmartAssignmentRanking {
   assignment: Assignment;
@@ -18,7 +16,6 @@ export interface SmartAssignmentRanking {
   urgencyLabel: 'CRITICAL' | 'URGENT' | 'HIGH' | 'ON_TRACK';
   daysRemaining: number;
   remainingHours: number;
-  busyHoursBeforeDeadline: number;
   freeHoursAvailable: number;
   reason: string;
   nextRecommendedTask?: { id: string; title: string; targetDate?: string; estimatedHours?: number };
@@ -55,7 +52,8 @@ export interface SmartSchedulePlan {
  * - Personal assignment deadlines, sub-deadlines, and incomplete tasks
  * - Group assignment deadlines and user-assigned group subtasks
  * - Priority weight (low/medium/high)
- * - Microsoft Calendar academic lectures and scheduled meetings
+ * - Total assignment marks
+ * - Available study hours based on days remaining (6h daily capacity cap)
  *
  * Formula: Total Work Hours = Personal Assignment Work Hours + Assigned Task Hours in Group Assignment
  */
@@ -63,7 +61,6 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
   const assignmentRepo = getAssignmentRepository();
   const taskRepo = getTaskRepository();
   const submissionRepo = getSubmissionRepository();
-  const calendarRepo = getCalendarRepository();
   const groupRepo = getGroupRepository();
 
   const now = new Date();
@@ -82,7 +79,6 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
   let personalWorkHours = 0;
   let groupWorkHours = 0;
   let hasScheduleConflict = false;
-  let conflictWarning = '';
 
   // ─── 1. Analyze Personal Assignments ────────────────────────────────────────
   const assignments = assignmentRepo.findAll(userId).filter(
@@ -121,18 +117,8 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
       }
     }
 
-    // Calculate busy calendar hours before deadline
-    let busyHoursBeforeDeadline = 0;
-    const daysToCheck = Math.min(Math.ceil(effectiveDays), 7);
-    for (let i = 0; i < daysToCheck; i++) {
-      const checkDate = new Date(now);
-      checkDate.setDate(now.getDate() + i);
-      const dateStr = checkDate.toISOString().split('T')[0];
-      busyHoursBeforeDeadline += getCalendarBusyHours(userId, dateStr);
-    }
-
-    const totalPotentialHours = daysToCheck * 8;
-    const freeHoursAvailable = Math.max(1, totalPotentialHours - busyHoursBeforeDeadline);
+    // Available study capacity: 6 hours per calendar day
+    const freeHoursAvailable = Math.max(1, Math.round(effectiveDays * 6));
 
     const priorityFactor = assignment.priority === 'high' ? 3 : assignment.priority === 'medium' ? 2 : 1;
     const marksFactor = assignment.totalMarks ? Math.min(2, 1 + assignment.totalMarks / 100) : 1;
@@ -146,7 +132,7 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
 
     if (effectiveDays <= 1 || freeHoursAvailable < remainingHours) {
       urgencyLabel = 'CRITICAL';
-      reason = `Deadline imminent (${Math.ceil(effectiveDays)}d) with ${remainingHours}h workload vs ${Math.round(freeHoursAvailable)}h free time${subDeadlineNotice}.`;
+      reason = `Deadline imminent (${Math.ceil(effectiveDays)}d) with ${remainingHours}h required workload vs ${freeHoursAvailable}h available study time${subDeadlineNotice}.`;
       hasScheduleConflict = true;
     } else if (effectiveDays <= 3 || priorityScore > 70) {
       urgencyLabel = 'URGENT';
@@ -179,7 +165,6 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
       urgencyLabel,
       daysRemaining: Math.ceil(effectiveDays),
       remainingHours,
-      busyHoursBeforeDeadline,
       freeHoursAvailable,
       reason,
       nextRecommendedTask: incompleteTasks[0],
@@ -247,16 +232,7 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
         }
       }
 
-      let busyHoursBeforeDeadline = 0;
-      const daysToCheck = Math.min(Math.ceil(effectiveDays), 7);
-      for (let i = 0; i < daysToCheck; i++) {
-        const checkDate = new Date(now);
-        checkDate.setDate(now.getDate() + i);
-        const dateStr = checkDate.toISOString().split('T')[0];
-        busyHoursBeforeDeadline += getCalendarBusyHours(userId, dateStr);
-      }
-      const totalPotentialHours = daysToCheck * 8;
-      const freeHoursAvailable = Math.max(1, totalPotentialHours - busyHoursBeforeDeadline);
+      const freeHoursAvailable = Math.max(1, Math.round(effectiveDays * 6));
 
       const groupPriority = (group.priority as Priority) || 'medium';
       const priorityFactor = groupPriority === 'high' ? 3 : groupPriority === 'medium' ? 2 : 1;
@@ -272,7 +248,7 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
 
       if (effectiveDays <= 1 || freeHoursAvailable < effectiveWorkload) {
         urgencyLabel = 'CRITICAL';
-        reason = `Group deadline imminent (${Math.ceil(effectiveDays)}d) with ${effectiveWorkload}h assigned tasks vs ${Math.round(freeHoursAvailable)}h free time${phaseNotice}.`;
+        reason = `Group deadline imminent (${Math.ceil(effectiveDays)}d) with ${effectiveWorkload}h assigned tasks vs ${freeHoursAvailable}h available study time${phaseNotice}.`;
         hasScheduleConflict = true;
       } else if (effectiveDays <= 3 || priorityScore > 70) {
         urgencyLabel = 'URGENT';
@@ -298,7 +274,7 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
         status: 'in_progress',
         createdAt: group.createdAt,
         updatedAt: group.updatedAt,
-        isSynced: group.isSynced,
+        isSynced: true,
         isDeleted: false,
       };
 
@@ -312,41 +288,45 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
         urgencyLabel,
         daysRemaining: Math.ceil(effectiveDays),
         remainingHours: effectiveWorkload,
-        busyHoursBeforeDeadline,
         freeHoursAvailable,
         reason,
-        nextRecommendedTask: assignedIncompleteTasks[0],
+        nextRecommendedTask: assignedIncompleteTasks[0]
+          ? {
+              id: assignedIncompleteTasks[0].id,
+              title: assignedIncompleteTasks[0].title,
+              targetDate: assignedIncompleteTasks[0].targetDate,
+              estimatedHours: assignedIncompleteTasks[0].estimatedHours,
+            }
+          : undefined,
       });
     }
   }
 
-  // ─── 3. Unified Work Hours & Conflict Detection ─────────────────────────────
-  // Total work hours = personal assignment work hours + assigned task hours in group assignment
-  const totalPendingHours = personalWorkHours + groupWorkHours;
-
-  if (hasScheduleConflict) {
-    conflictWarning = `Schedule overloaded! You have ${totalPendingHours}h total workload (${personalWorkHours}h personal + ${groupWorkHours}h group tasks) with busy lectures/meetings scheduled.`;
-  }
-
-  // Sort all assignments (personal + group) by priority score descending
+  // Sort assignments strictly by priority score descending
   rankedAssignments.sort((a, b) => b.priorityScore - a.priorityScore);
 
-  // Pick top 4 unified focus tasks for today
+  // Pick top 3 urgent focus tasks for today
   allFocusCandidates.sort((a, b) => {
-    const dDiff = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-    if (dDiff !== 0) return dDiff;
+    const dateA = new Date(a.deadline).getTime();
+    const dateB = new Date(b.deadline).getTime();
+    if (dateA !== dateB) return dateA - dateB;
     return b.urgencyScore - a.urgencyScore;
   });
 
-  const todaysFocusTasks: SmartFocusTask[] = allFocusCandidates.slice(0, 4).map((item) => ({
-    task: item.task,
-    assignmentTitle: item.assignmentTitle,
-    deadline: item.deadline,
-    priority: item.priority,
-    isGroup: item.isGroup,
-    groupId: item.groupId,
-    assignmentId: item.assignmentId,
+  const todaysFocusTasks: SmartFocusTask[] = allFocusCandidates.slice(0, 3).map((c) => ({
+    task: c.task,
+    assignmentTitle: c.assignmentTitle,
+    deadline: c.deadline,
+    priority: c.priority,
+    isGroup: c.isGroup,
+    groupId: c.groupId,
+    assignmentId: c.assignmentId,
   }));
+
+  const totalPendingHours = personalWorkHours + groupWorkHours;
+  const conflictWarning = hasScheduleConflict
+    ? 'Required workload exceeds available study time before upcoming deadlines. Focus on critical tasks immediately!'
+    : undefined;
 
   return {
     rankedAssignments,
@@ -355,31 +335,27 @@ export function analyzeAndRankAssignments(userId: string): SmartSchedulePlan {
     groupWorkHours,
     totalPendingHours,
     hasScheduleConflict,
-    conflictWarning: hasScheduleConflict ? conflictWarning : undefined,
+    conflictWarning,
   };
 }
 
 /**
- * Automatically suggests evenly-distributed target dates for subtasks prior to assignment deadline.
- * Example: For a deadline 2026-11-20 with 3 tasks, suggests spaced target dates before the final date.
+ * Automatically spaces out subtask target dates evenly between today and the deadline
  */
 export function suggestSubtaskTargetDates(deadlineISO: string, taskCount: number): string[] {
   if (taskCount <= 0) return [];
   const now = new Date();
   const deadline = new Date(deadlineISO);
-  const totalMs = deadline.getTime() - now.getTime();
-
-  if (totalMs <= 0) {
+  const diffMs = deadline.getTime() - now.getTime();
+  if (diffMs <= 0) {
     return Array(taskCount).fill(deadlineISO.split('T')[0]);
   }
 
-  const intervalMs = totalMs / (taskCount + 1);
+  const interval = diffMs / (taskCount + 1);
   const dates: string[] = [];
-
   for (let i = 1; i <= taskCount; i++) {
-    const targetDate = new Date(now.getTime() + intervalMs * i);
-    dates.push(targetDate.toISOString().split('T')[0]);
+    const target = new Date(now.getTime() + interval * i);
+    dates.push(target.toISOString().split('T')[0]);
   }
-
   return dates;
 }

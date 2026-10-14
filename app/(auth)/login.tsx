@@ -40,7 +40,6 @@ export default function LoginScreen(): React.JSX.Element {
     if (error) {
       Alert.alert('Login Failed', error);
     }
-    // Navigation is handled automatically by the auth guard in _layout.tsx
   }
 
   return (
@@ -57,7 +56,7 @@ export default function LoginScreen(): React.JSX.Element {
           <View style={styles.header}>
             <Text style={styles.appTitle}>📚</Text>
             <Text style={styles.title}>Welcome back</Text>
-            <Text style={styles.subtitle}>Sign in to your account</Text>
+            <Text style={styles.subtitle}>Sign in to your student workspace</Text>
           </View>
 
           {/* Form */}
@@ -126,7 +125,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 40,
   },
-  header: { alignItems: 'center', marginBottom: 40 },
+  header: { alignItems: 'center', marginBottom: 32 },
   appTitle: { fontSize: 56, marginBottom: 16 },
   title: { fontSize: 28, fontWeight: '700', color: COLORS.text.primary },
   subtitle: { fontSize: 16, color: COLORS.text.secondary, marginTop: 6 },
@@ -139,7 +138,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 16,
+    fontSize: 15,
     color: COLORS.text.primary,
     backgroundColor: COLORS.surface,
   },
@@ -160,4 +159,3 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 14, color: COLORS.text.secondary },
   footerLink: { fontSize: 14, fontWeight: '600', color: COLORS.primary },
 });
-

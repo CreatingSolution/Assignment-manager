@@ -22,11 +22,14 @@ import { File } from 'expo-file-system';
 import { COLORS } from '../constants';
 import type { AttachmentItem } from '../types';
 import { generateId } from '../utils/id.utils';
+import { getAssignmentRepository, getGroupRepository } from '../database';
 
 interface DocumentScannerModalProps {
   visible: boolean;
   onClose: () => void;
+  userId?: string;
   onAttach?: (attachment: AttachmentItem) => void;
+  onAttached?: (assignmentTitle: string, isGroup: boolean) => void;
 }
 
 interface ScannedPage {
@@ -42,6 +45,15 @@ interface GeneratedPdfInfo {
   pageCount: number;
 }
 
+interface TargetAssignmentOption {
+  id: string;
+  title: string;
+  isGroup: boolean;
+  deadline?: string;
+  courseOrCode?: string;
+  existingAttachmentsCount: number;
+}
+
 function formatBytes(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -52,18 +64,27 @@ function formatBytes(bytes?: number): string {
 export function DocumentScannerModal({
   visible,
   onClose,
+  userId,
   onAttach,
+  onAttached,
 }: DocumentScannerModalProps): React.JSX.Element {
   const [pages, setPages] = useState<ScannedPage[]>([]);
   const [docName, setDocName] = useState<string>('Scanned_Document');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generatedPdf, setGeneratedPdf] = useState<GeneratedPdfInfo | null>(null);
 
+  // Assignment selection modal state for "Attach to Assignment"
+  const [selectorVisible, setSelectorVisible] = useState<boolean>(false);
+  const [assignmentOptions, setAssignmentOptions] = useState<TargetAssignmentOption[]>([]);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+
   const handleReset = () => {
     setPages([]);
     setGeneratedPdf(null);
     setDocName('Scanned_Document');
     setIsGenerating(false);
+    setSelectorVisible(false);
+    setSelectedOptionId(null);
   };
 
   const handleClose = () => {
@@ -96,7 +117,6 @@ export function DocumentScannerModal({
           base64: asset.base64 || undefined,
         };
         setPages((prev) => [...prev, newPage]);
-        // Invalidate previously generated PDF since pages changed
         if (generatedPdf) setGeneratedPdf(null);
       }
     } catch (err) {
@@ -246,7 +266,7 @@ export function DocumentScannerModal({
         'PDF Generated Successfully! 📄',
         `Your document has been compiled into a high-quality PDF (${pages.length} page${
           pages.length > 1 ? 's' : ''
-        }${fileSize ? `, ${formatBytes(fileSize)}` : ''}). You can now Download/Share or Attach it.`
+        }${fileSize ? `, ${formatBytes(fileSize)}` : ''}). You can now Download/Share or Attach it to an Assignment.`
       );
     } catch (err) {
       Alert.alert(
@@ -280,27 +300,6 @@ export function DocumentScannerModal({
     }
   };
 
-  const handleAttachToAssignment = () => {
-    if (!generatedPdf) return;
-    if (!onAttach) {
-      Alert.alert('Info', 'No assignment attachment handler provided.');
-      return;
-    }
-
-    const item: AttachmentItem = {
-      id: generateId(),
-      name: generatedPdf.fileName,
-      uri: generatedPdf.uri,
-      type: 'document',
-      mimeType: 'application/pdf',
-      size: generatedPdf.size,
-    };
-
-    onAttach(item);
-    Alert.alert('Attached! 📎', `"${generatedPdf.fileName}" added to your assignment attachments.`);
-    handleClose();
-  };
-
   const handlePreviewPdf = async () => {
     if (!generatedPdf) return;
     try {
@@ -315,6 +314,120 @@ export function DocumentScannerModal({
     }
   };
 
+  // Open the Assignment Selection dialog
+  const handleOpenAssignmentSelector = () => {
+    if (!generatedPdf) {
+      Alert.alert('Generate PDF First', 'Please convert your scanned pages to PDF before attaching.');
+      return;
+    }
+
+    const options: TargetAssignmentOption[] = [];
+
+    if (userId) {
+      const assignmentRepo = getAssignmentRepository();
+      const groupRepo = getGroupRepository();
+
+      // 1. Individual assignments
+      try {
+        const personalAssignments = assignmentRepo.findAll(userId).filter((a) => !a.isDeleted);
+        personalAssignments.forEach((a) => {
+          options.push({
+            id: a.id,
+            title: a.title,
+            isGroup: false,
+            deadline: a.deadline,
+            existingAttachmentsCount: a.attachments?.length || 0,
+          });
+        });
+      } catch {
+        // Continue
+      }
+
+      // 2. Group assignments
+      try {
+        const userGroups = groupRepo.findAllForUser(userId);
+        userGroups.forEach((g) => {
+          options.push({
+            id: g.id,
+            title: g.name,
+            isGroup: true,
+            deadline: g.deadline,
+            existingAttachmentsCount: g.attachments?.length || 0,
+          });
+        });
+      } catch {
+        // Continue
+      }
+    }
+
+    if (options.length === 0) {
+      Alert.alert(
+        'No Assignments Found',
+        'You have no active individual or group assignments to attach this document to. Please create an assignment first.'
+      );
+      return;
+    }
+
+    setAssignmentOptions(options);
+    setSelectedOptionId(options[0]?.id || null);
+    setSelectorVisible(true);
+  };
+
+  // Confirm and attach PDF to selected assignment
+  const handleConfirmAttach = () => {
+    if (!generatedPdf || !selectedOptionId) {
+      Alert.alert('Selection Required', 'Please select an assignment using the radio button.');
+      return;
+    }
+
+    const target = assignmentOptions.find((o) => o.id === selectedOptionId);
+    if (!target) {
+      Alert.alert('Error', 'Selected assignment not found.');
+      return;
+    }
+
+    const newAttachment: AttachmentItem = {
+      id: generateId(),
+      name: generatedPdf.fileName,
+      uri: generatedPdf.uri,
+      type: 'document',
+      mimeType: 'application/pdf',
+      size: generatedPdf.size,
+    };
+
+    try {
+      if (target.isGroup) {
+        const groupRepo = getGroupRepository();
+        const currentGroup = groupRepo.findById(target.id);
+        const updatedList = [...(currentGroup?.attachments || []), newAttachment];
+        groupRepo.update(target.id, { attachments: updatedList });
+      } else {
+        const assignmentRepo = getAssignmentRepository();
+        const currentAssignment = assignmentRepo.findById(target.id);
+        const updatedList = [...(currentAssignment?.attachments || []), newAttachment];
+        assignmentRepo.update(target.id, { attachments: updatedList });
+      }
+
+      onAttach?.(newAttachment);
+      onAttached?.(target.title, target.isGroup);
+
+      Alert.alert(
+        'Attached Successfully! 📎',
+        `"${generatedPdf.fileName}" has been attached to ${
+          target.isGroup ? 'Group Workspace' : 'Assignment'
+        } "${target.title}".`
+      );
+
+      setSelectorVisible(false);
+      handleClose();
+    } catch (err) {
+      Alert.alert(
+        'Attachment Error',
+        err instanceof Error ? err.message : 'Could not attach PDF to the selected assignment.'
+      );
+    }
+  };
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.safeArea}>
@@ -325,8 +438,12 @@ export function DocumentScannerModal({
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.headerTitle}>📑 Document Scanner</Text>
-              <Text style={styles.headerSubtitle}>Scan & Convert Pages to PDF</Text>
+              <Text style={styles.headerTitle}>📑 Scan to PDF</Text>
+              <Text style={styles.headerSubtitle}>
+                {pages.length === 0
+                  ? 'Capture single or multi-page documents'
+                  : `${pages.length} page${pages.length === 1 ? '' : 's'} ready for PDF conversion`}
+              </Text>
             </View>
             <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
               <Text style={styles.closeBtnText}>✕</Text>
@@ -366,7 +483,7 @@ export function DocumentScannerModal({
                     setDocName(text);
                     if (generatedPdf) setGeneratedPdf(null);
                   }}
-                  placeholder="e.g. Math_Assignment_1"
+                  placeholder="e.g. Distributed_Systems_Assignment"
                   placeholderTextColor={COLORS.text.muted}
                   autoCapitalize="words"
                 />
@@ -376,9 +493,18 @@ export function DocumentScannerModal({
 
             {/* Scanned Pages Section */}
             <View style={styles.pagesSectionHeader}>
-              <Text style={styles.sectionTitle}>
-                Scanned Pages ({pages.length})
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.sectionTitle}>
+                  Scanned Pages ({pages.length})
+                </Text>
+                {pages.length > 0 && (
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>
+                      {pages.length === 1 ? '1 Page' : `${pages.length} Pages`}
+                    </Text>
+                  </View>
+                )}
+              </View>
               {pages.length > 0 && (
                 <TouchableOpacity onPress={() => setPages([])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Text style={styles.clearAllText}>Clear All</Text>
@@ -391,7 +517,7 @@ export function DocumentScannerModal({
                 <Text style={styles.emptyIcon}>📄</Text>
                 <Text style={styles.emptyTitle}>No pages scanned yet</Text>
                 <Text style={styles.emptySubtitle}>
-                  Tap "Capture Page" to snap document pages with your camera, or "Add from Photos" to select page images.
+                  Tap "Capture Page" to snap document pages with your camera, or "Add from Photos" to select page images. Supports single or multi-page documents.
                 </Text>
               </View>
             ) : (
@@ -403,10 +529,12 @@ export function DocumentScannerModal({
                     <View style={styles.pageInfo}>
                       <Text style={styles.pageNumberText}>Page {index + 1}</Text>
                       <Text style={styles.pageSubText}>
-                        {index === 0 && pages.length > 1
-                          ? 'First Page (Cover)'
-                          : index === pages.length - 1 && pages.length > 1
-                          ? 'Final Page'
+                        {pages.length === 1
+                          ? 'Single Page Document'
+                          : index === 0
+                          ? 'Page 1 (Cover)'
+                          : index === pages.length - 1
+                          ? `Page ${index + 1} (Final Page)`
                           : `Page ${index + 1} of ${pages.length}`}
                       </Text>
                     </View>
@@ -441,7 +569,7 @@ export function DocumentScannerModal({
               </View>
             )}
 
-            {/* Generate PDF CTA */}
+            {/* Action: Generate PDF */}
             {pages.length > 0 && (
               <TouchableOpacity
                 style={[styles.generateBtn, isGenerating && styles.disabledGenerateBtn]}
@@ -452,11 +580,13 @@ export function DocumentScannerModal({
                 {isGenerating ? (
                   <View style={styles.generatingRow}>
                     <ActivityIndicator size="small" color="#FFFFFF" />
-                    <Text style={styles.generateBtnText}>Compiling PDF document...</Text>
+                    <Text style={styles.generateBtnText}>Compiling PDF...</Text>
                   </View>
                 ) : (
                   <Text style={styles.generateBtnText}>
-                    {generatedPdf ? '⚡ Re-generate PDF' : '⚡ Convert to PDF'}
+                    {generatedPdf
+                      ? `⚡ Re-generate PDF (${pages.length} page${pages.length > 1 ? 's' : ''})`
+                      : `⚡ Convert to PDF (${pages.length} page${pages.length > 1 ? 's' : ''})`}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -491,19 +621,17 @@ export function DocumentScannerModal({
                   </TouchableOpacity>
 
                   {/* Attach to assignment action */}
-                  {onAttach && (
-                    <TouchableOpacity
-                      style={styles.attachBtn}
-                      onPress={handleAttachToAssignment}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.attachBtnIcon}>📎</Text>
-                      <View style={styles.attachBtnTexts}>
-                        <Text style={styles.attachBtnTitle}>Attach to Assignment</Text>
-                        <Text style={styles.attachBtnSub}>Directly save to this assignment's attachments</Text>
-                      </View>
-                    </TouchableOpacity>
-                  )}
+                  <TouchableOpacity
+                    style={styles.attachBtn}
+                    onPress={handleOpenAssignmentSelector}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.attachBtnIcon}>📎</Text>
+                    <View style={styles.attachBtnTexts}>
+                      <Text style={styles.attachBtnTitle}>Attach to Assignment</Text>
+                      <Text style={styles.attachBtnSub}>Select from your individual or group assignments</Text>
+                    </View>
+                  </TouchableOpacity>
 
                   {/* Preview action */}
                   <TouchableOpacity
@@ -518,6 +646,99 @@ export function DocumentScannerModal({
             )}
           </ScrollView>
         </KeyboardAvoidingView>
+
+        {/* ─── Assignment Selection Dialog Modal with Radio Buttons ─────────── */}
+        <Modal
+          visible={selectorVisible}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setSelectorVisible(false)}
+        >
+          <View style={styles.selectorBackdrop}>
+            <View style={styles.selectorContainer}>
+              <View style={styles.selectorHeader}>
+                <Text style={styles.selectorTitle}>📎 Select Assignment</Text>
+                <Text style={styles.selectorSubtitle}>
+                  Choose which assignment to attach "{generatedPdf?.fileName}":
+                </Text>
+              </View>
+
+              <ScrollView style={styles.selectorList} contentContainerStyle={{ gap: 8 }}>
+                {assignmentOptions.map((opt) => {
+                  const isSelected = selectedOptionId === opt.id;
+                  return (
+                    <TouchableOpacity
+                      key={opt.id}
+                      style={[styles.assignmentOptionCard, isSelected && styles.assignmentOptionSelected]}
+                      activeOpacity={0.8}
+                      onPress={() => setSelectedOptionId(opt.id)}
+                    >
+                      {/* Radio button */}
+                      <View style={[styles.radioButton, isSelected && styles.radioButtonSelected]}>
+                        {isSelected && <View style={styles.radioButtonInner} />}
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          <View
+                            style={[
+                              styles.typeBadge,
+                              opt.isGroup ? styles.groupTypeBadge : styles.personalTypeBadge,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.typeBadgeText,
+                                opt.isGroup ? styles.groupTypeBadgeText : styles.personalTypeBadgeText,
+                              ]}
+                            >
+                              {opt.isGroup ? '👥 Group' : '👤 Personal'}
+                            </Text>
+                          </View>
+                          {opt.deadline && (
+                            <Text style={styles.optionDeadlineText}>
+                              📅 {opt.deadline.slice(0, 10)}
+                            </Text>
+                          )}
+                        </View>
+
+                        <Text style={styles.optionTitle} numberOfLines={1}>
+                          {opt.title}
+                        </Text>
+
+                        {opt.existingAttachmentsCount > 0 && (
+                          <Text style={styles.optionAttachmentsText}>
+                            📎 {opt.existingAttachmentsCount} existing attachment{opt.existingAttachmentsCount > 1 ? 's' : ''}
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <View style={styles.selectorActions}>
+                <TouchableOpacity
+                  style={styles.selectorCancelBtn}
+                  onPress={() => setSelectorVisible(false)}
+                >
+                  <Text style={styles.selectorCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.selectorOkBtn,
+                    !selectedOptionId && styles.disabledSelectorOkBtn,
+                  ]}
+                  onPress={handleConfirmAttach}
+                  disabled={!selectedOptionId}
+                >
+                  <Text style={styles.selectorOkText}>OK / Attach PDF</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </Modal>
   );
@@ -636,6 +857,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.text.primary,
+  },
+  countBadge: {
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3730A3',
   },
   clearAllText: {
     fontSize: 12,
@@ -854,5 +1086,146 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#475569',
   },
-});
 
+  // Assignment Selector Modal Styles
+  selectorBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+  selectorContainer: {
+    width: '100%',
+    maxHeight: '80%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  selectorHeader: {
+    marginBottom: 14,
+  },
+  selectorTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  selectorSubtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginTop: 4,
+  },
+  selectorList: {
+    maxHeight: 280,
+    marginBottom: 14,
+  },
+  assignmentOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    gap: 12,
+  },
+  assignmentOptionSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#EFF6FF',
+  },
+  radioButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioButtonSelected: {
+    borderColor: COLORS.primary,
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: COLORS.primary,
+  },
+  typeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  typeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  personalTypeBadge: {
+    backgroundColor: '#DBEAFE',
+  },
+  personalTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1E40AF',
+  },
+  groupTypeBadge: {
+    backgroundColor: '#EDE9FE',
+  },
+  groupTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6D28D9',
+  },
+  optionDeadlineText: {
+    fontSize: 11,
+    color: COLORS.text.secondary,
+  },
+  optionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  optionAttachmentsText: {
+    fontSize: 11,
+    color: COLORS.text.muted,
+    marginTop: 2,
+  },
+  selectorActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  selectorCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  selectorCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  selectorOkBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+  },
+  disabledSelectorOkBtn: {
+    backgroundColor: '#94A3B8',
+  },
+  selectorOkText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+});

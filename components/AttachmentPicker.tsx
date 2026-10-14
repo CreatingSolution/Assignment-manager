@@ -13,7 +13,6 @@ import * as DocumentPicker from 'expo-document-picker';
 import { COLORS } from '../constants';
 import type { AttachmentItem } from '../types';
 import { generateId } from '../utils/id.utils';
-import { DocumentScannerModal } from './DocumentScannerModal';
 import { AttachmentViewerModal, downloadOrShareAttachment } from './AttachmentViewerModal';
 
 interface AttachmentPickerProps {
@@ -42,7 +41,6 @@ export function AttachmentPicker({
   onChange,
   editable = true,
 }: AttachmentPickerProps): React.JSX.Element {
-  const [scannerVisible, setScannerVisible] = useState(false);
   const [viewingItem, setViewingItem] = useState<AttachmentItem | null>(null);
 
   const handleTakeCamera = async () => {
@@ -190,15 +188,6 @@ export function AttachmentPicker({
             <Text style={styles.actionButtonIcon}>📄</Text>
             <Text style={styles.actionButtonText}>PDF / Doc</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionButton, styles.scanButton]}
-            onPress={() => setScannerVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionButtonIcon}>📑</Text>
-            <Text style={[styles.actionButtonText, styles.scanButtonText]}>Scan to PDF</Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -271,15 +260,6 @@ export function AttachmentPicker({
         </View>
       )}
 
-      {/* Document Scanner & PDF Modal */}
-      <DocumentScannerModal
-        visible={scannerVisible}
-        onClose={() => setScannerVisible(false)}
-        onAttach={(scannedPdf) => {
-          onChange?.([...attachments, scannedPdf]);
-        }}
-      />
-
       {/* Attachment Viewer & Downloader Modal */}
       <AttachmentViewerModal
         visible={!!viewingItem}
@@ -298,30 +278,21 @@ const styles = StyleSheet.create({
   },
   actionButtonsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
   },
   actionButton: {
     flex: 1,
-    minWidth: '47%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     backgroundColor: '#EFF6FF',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#BFDBFE',
-  },
-  scanButton: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
-  },
-  scanButtonText: {
-    color: '#15803D',
   },
   actionButtonIcon: {
     fontSize: 16,

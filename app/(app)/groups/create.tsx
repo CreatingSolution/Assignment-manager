@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, PRIORITY_COLORS } from '../../../constants';
+import { useAuth } from '../../../hooks/use-auth.hook';
 import { useCreateGroup } from '../../../hooks/use-groups.hook';
 import { useCourses, useCreateCourse } from '../../../hooks/use-courses.hook';
 import { DatePickerModal } from '../../../components/DatePickerModal';
@@ -25,6 +26,7 @@ interface SubtaskDraft {
   title: string;
   targetDate: string;
   estimatedHours?: number;
+  assignedToSelf?: boolean;
 }
 
 interface SubmissionDraft {
@@ -35,6 +37,7 @@ interface SubmissionDraft {
 
 export default function CreateGroupAssignmentScreen(): React.JSX.Element {
   const router = useRouter();
+  const { user } = useAuth();
   const { data: courses = [] } = useCourses();
   const createGroup = useCreateGroup();
   const createCourse = useCreateCourse();
@@ -85,9 +88,9 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
 
   // Ex 1: Milestone tasks
   const [milestoneTasks, setMilestoneTasks] = useState<SubtaskDraft[]>([
-    { title: 'Project Research & Architecture', targetDate: '', estimatedHours: 4 },
-    { title: 'Module Implementation', targetDate: '', estimatedHours: 8 },
-    { title: 'Testing & Presentation Slides', targetDate: '', estimatedHours: 3 },
+    { title: 'Project Research & Architecture', targetDate: '', estimatedHours: 4, assignedToSelf: false },
+    { title: 'Module Implementation', targetDate: '', estimatedHours: 8, assignedToSelf: false },
+    { title: 'Testing & Presentation Slides', targetDate: '', estimatedHours: 3, assignedToSelf: false },
   ]);
 
   // Ex 2: Phased submissions
@@ -96,24 +99,24 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
       title: 'Submission 1 - Proposal & SRS',
       deadline: '',
       tasks: [
-        { title: 'Problem definition & scope', targetDate: '', estimatedHours: 2 },
-        { title: 'System architecture diagram', targetDate: '', estimatedHours: 3 },
+        { title: 'Problem definition & scope', targetDate: '', estimatedHours: 2, assignedToSelf: false },
+        { title: 'System architecture diagram', targetDate: '', estimatedHours: 3, assignedToSelf: false },
       ],
     },
     {
       title: 'Submission 2 - Prototype & MVP',
       deadline: '',
       tasks: [
-        { title: 'Core features coding', targetDate: '', estimatedHours: 6 },
-        { title: 'Unit & integration tests', targetDate: '', estimatedHours: 4 },
+        { title: 'Core features coding', targetDate: '', estimatedHours: 6, assignedToSelf: false },
+        { title: 'Unit & integration tests', targetDate: '', estimatedHours: 4, assignedToSelf: false },
       ],
     },
     {
       title: 'Submission 3 - Final Report & Demo',
       deadline: '',
       tasks: [
-        { title: 'Comprehensive report writing', targetDate: '', estimatedHours: 5 },
-        { title: 'Video demo & code clean-up', targetDate: '', estimatedHours: 2 },
+        { title: 'Comprehensive report writing', targetDate: '', estimatedHours: 5, assignedToSelf: false },
+        { title: 'Video demo & code clean-up', targetDate: '', estimatedHours: 2, assignedToSelf: false },
       ],
     },
   ]);
@@ -187,11 +190,31 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
         attachments: attachments.length > 0 ? attachments : undefined,
         submissions:
           structureMode === 'phased'
-            ? phasedSubmissions.filter((s) => s.title.trim().length > 0)
+            ? phasedSubmissions
+                .filter((s) => s.title.trim().length > 0)
+                .map((s) => ({
+                  title: s.title.trim(),
+                  deadline: s.deadline || undefined,
+                  tasks: s.tasks
+                    .filter((t) => t.title.trim().length > 0)
+                    .map((t) => ({
+                      title: t.title.trim(),
+                      targetDate: t.targetDate || undefined,
+                      estimatedHours: t.estimatedHours,
+                      assignedUserIds: t.assignedToSelf && user?.id ? [user.id] : [],
+                    })),
+                }))
             : undefined,
         tasks:
           structureMode === 'milestones'
-            ? milestoneTasks.filter((t) => t.title.trim().length > 0)
+            ? milestoneTasks
+                .filter((t) => t.title.trim().length > 0)
+                .map((t) => ({
+                  title: t.title.trim(),
+                  targetDate: t.targetDate || undefined,
+                  estimatedHours: t.estimatedHours,
+                  assignedUserIds: t.assignedToSelf && user?.id ? [user.id] : [],
+                }))
             : undefined,
       });
 
@@ -521,6 +544,31 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
                       {task.targetDate ? `Target: ${task.targetDate}` : 'Select Target Date (Calendar)'}
                     </Text>
                   </TouchableOpacity>
+
+                  {/* Task Assignment */}
+                  <View style={styles.assignRow}>
+                    <Text style={styles.assignLabel}>Assignment:</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const updated = [...milestoneTasks];
+                        updated[idx].assignedToSelf = !updated[idx].assignedToSelf;
+                        setMilestoneTasks(updated);
+                      }}
+                      style={[
+                        styles.assignBtn,
+                        task.assignedToSelf ? styles.assignBtnActive : styles.assignBtnUnassigned,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.assignBtnText,
+                          task.assignedToSelf ? styles.assignBtnTextActive : styles.assignBtnTextUnassigned,
+                        ]}
+                      >
+                        {task.assignedToSelf ? '👤 Assigned to Me (Admin)' : '⚪ Unassigned (Default)'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ))}
 
@@ -528,7 +576,7 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
                 onPress={() =>
                   setMilestoneTasks([
                     ...milestoneTasks,
-                    { title: '', targetDate: '', estimatedHours: 2 },
+                    { title: '', targetDate: '', estimatedHours: 2, assignedToSelf: false },
                   ])
                 }
                 style={styles.addDraftBtn}
@@ -589,52 +637,87 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
                   {/* Subtasks under this phase */}
                   <Text style={styles.subtasksLabel}>Phase Subtasks ({sub.tasks.length}):</Text>
                   {sub.tasks.map((task, tIdx) => (
-                    <View key={tIdx} style={styles.subtaskNestedRow}>
-                      <TextInput
-                        style={[styles.taskDraftInput, { flex: 1, marginBottom: 0 }]}
-                        placeholder="Task name"
-                        placeholderTextColor={COLORS.text.muted}
-                        value={task.title}
-                        onChangeText={(text) => {
-                          const updated = [...phasedSubmissions];
-                          updated[sIdx].tasks[tIdx].title = text;
-                          setPhasedSubmissions(updated);
-                        }}
-                      />
-                      <TouchableOpacity
-                        onPress={() =>
-                          openDatePicker(
-                            `Target Date for "${task.title || 'Task'}"`,
-                            task.targetDate,
-                            (d) => {
-                              const updated = [...phasedSubmissions];
-                              updated[sIdx].tasks[tIdx].targetDate = d;
-                              setPhasedSubmissions(updated);
-                            }
-                          )
-                        }
-                        activeOpacity={0.7}
-                        style={styles.calendarMiniBtn}
-                      >
-                        <Text style={{ fontSize: 13 }}>📅 {task.targetDate || 'Date'}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => {
-                          const updated = [...phasedSubmissions];
-                          updated[sIdx].tasks = updated[sIdx].tasks.filter((_, i) => i !== tIdx);
-                          setPhasedSubmissions(updated);
-                        }}
-                        style={styles.removeMiniBtn}
-                      >
-                        <Text style={{ color: COLORS.status.error, fontWeight: '700' }}>✕</Text>
-                      </TouchableOpacity>
+                    <View key={tIdx} style={styles.subtaskNestedWrapper}>
+                      <View style={styles.subtaskNestedRow}>
+                        <TextInput
+                          style={[styles.taskDraftInput, { flex: 1, marginBottom: 0 }]}
+                          placeholder="Task name"
+                          placeholderTextColor={COLORS.text.muted}
+                          value={task.title}
+                          onChangeText={(text) => {
+                            const updated = [...phasedSubmissions];
+                            updated[sIdx].tasks[tIdx].title = text;
+                            setPhasedSubmissions(updated);
+                          }}
+                        />
+                        <TouchableOpacity
+                          onPress={() =>
+                            openDatePicker(
+                              `Target Date for "${task.title || 'Task'}"`,
+                              task.targetDate,
+                              (d) => {
+                                const updated = [...phasedSubmissions];
+                                updated[sIdx].tasks[tIdx].targetDate = d;
+                                setPhasedSubmissions(updated);
+                              }
+                            )
+                          }
+                          activeOpacity={0.7}
+                          style={styles.calendarMiniBtn}
+                        >
+                          <Text style={{ fontSize: 13 }}>📅 {task.targetDate || 'Date'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const updated = [...phasedSubmissions];
+                            updated[sIdx].tasks = updated[sIdx].tasks.filter((_, i) => i !== tIdx);
+                            setPhasedSubmissions(updated);
+                          }}
+                          style={styles.removeMiniBtn}
+                        >
+                          <Text style={{ color: COLORS.status.error, fontWeight: '700' }}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.assignMiniRow}>
+                        <Text style={styles.assignMiniLabel}>Assignee:</Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const updated = [...phasedSubmissions];
+                            updated[sIdx].tasks[tIdx].assignedToSelf =
+                              !updated[sIdx].tasks[tIdx].assignedToSelf;
+                            setPhasedSubmissions(updated);
+                          }}
+                          style={[
+                            styles.assignMiniBtn,
+                            task.assignedToSelf
+                              ? styles.assignMiniBtnActive
+                              : styles.assignMiniBtnUnassigned,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.assignMiniBtnText,
+                              task.assignedToSelf
+                                ? styles.assignMiniBtnTextActive
+                                : styles.assignMiniBtnTextUnassigned,
+                            ]}
+                          >
+                            {task.assignedToSelf ? '👤 Assigned to Me' : '⚪ Unassigned (Default)'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
 
                   <TouchableOpacity
                     onPress={() => {
                       const updated = [...phasedSubmissions];
-                      updated[sIdx].tasks.push({ title: '', targetDate: '', estimatedHours: 2 });
+                      updated[sIdx].tasks.push({
+                        title: '',
+                        targetDate: '',
+                        estimatedHours: 2,
+                        assignedToSelf: false,
+                      });
                       setPhasedSubmissions(updated);
                     }}
                     style={styles.addMiniSubtaskBtn}
@@ -651,7 +734,7 @@ export default function CreateGroupAssignmentScreen(): React.JSX.Element {
                     {
                       title: `Submission ${phasedSubmissions.length + 1}`,
                       deadline: '',
-                      tasks: [{ title: '', targetDate: '', estimatedHours: 2 }],
+                      tasks: [{ title: '', targetDate: '', estimatedHours: 2, assignedToSelf: false }],
                     },
                   ])
                 }
@@ -890,6 +973,65 @@ const styles = StyleSheet.create({
   removeMiniBtn: { paddingHorizontal: 6, paddingVertical: 6 },
   addMiniSubtaskBtn: { paddingVertical: 4, alignSelf: 'flex-start', marginTop: 2 },
   addMiniSubtaskText: { fontSize: 12, color: COLORS.primary, fontWeight: '600' },
+  assignRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  assignLabel: { fontSize: 12, fontWeight: '600', color: COLORS.text.secondary },
+  assignBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  assignBtnActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: COLORS.primary,
+  },
+  assignBtnUnassigned: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  assignBtnText: { fontSize: 12, fontWeight: '600' },
+  assignBtnTextActive: { color: COLORS.primary },
+  assignBtnTextUnassigned: { color: COLORS.text.muted },
+  subtaskNestedWrapper: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 8,
+    marginBottom: 8,
+  },
+  assignMiniRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  assignMiniLabel: { fontSize: 11, fontWeight: '600', color: COLORS.text.muted },
+  assignMiniBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  assignMiniBtnActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: COLORS.primary,
+  },
+  assignMiniBtnUnassigned: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+  },
+  assignMiniBtnText: { fontSize: 11, fontWeight: '600' },
+  assignMiniBtnTextActive: { color: COLORS.primary },
+  assignMiniBtnTextUnassigned: { color: COLORS.text.muted },
   bottomCreateBtn: {
     backgroundColor: COLORS.primary,
     paddingVertical: 14,

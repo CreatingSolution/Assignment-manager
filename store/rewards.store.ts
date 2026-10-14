@@ -14,6 +14,7 @@ interface RewardsState {
   history: RewardHistoryItem[];
   loadCoins: (userId?: string) => Promise<void>;
   awardCoins: (amount: number, reason: string, userId?: string) => Promise<void>;
+  spendCoins: (amount: number, reason: string, userId?: string) => Promise<boolean>;
   resetForUser: (userId?: string) => void;
 }
 
@@ -112,5 +113,55 @@ export const useRewardsStore = create<RewardsState>((set, get) => ({
     } catch {
       // Ignore
     }
+  },
+
+  spendCoins: async (amount: number, reason: string, targetUserId?: string): Promise<boolean> => {
+    const activeUserId = targetUserId ?? get().userId;
+    const current = get();
+    const key = getStorageKey(activeUserId);
+
+    let targetCoins = current.coins;
+    let targetHistory = current.history;
+
+    if (activeUserId && activeUserId !== current.userId) {
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { coins: number; history: RewardHistoryItem[] };
+          targetCoins = parsed.coins ?? 50;
+          targetHistory = parsed.history || [];
+        }
+      } catch {
+        targetCoins = 50;
+      }
+    }
+
+    if (targetCoins < amount) {
+      return false;
+    }
+
+    const newCoins = targetCoins - amount;
+    const newItem: RewardHistoryItem = {
+      id: `spend-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      amount: -amount,
+      reason,
+      timestamp: Date.now(),
+    };
+    const newHistory = [newItem, ...targetHistory];
+
+    if (!targetUserId || targetUserId === current.userId) {
+      set({ coins: newCoins, history: newHistory });
+    }
+
+    try {
+      await AsyncStorage.setItem(
+        key,
+        JSON.stringify({ coins: newCoins, history: newHistory })
+      );
+    } catch {
+      // Ignore
+    }
+
+    return true;
   },
 }));

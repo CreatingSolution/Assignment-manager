@@ -577,7 +577,7 @@ export class GroupRepository {
 
   completeGroupTask(
     taskId: string,
-    _userId: string
+    userId: string
   ): { earnedCoin: boolean; coinsAwarded: number } {
     const task = this.getGroupTaskById(taskId);
     if (!task) return { earnedCoin: false, coinsAwarded: 0 };
@@ -588,12 +588,20 @@ export class GroupRepository {
       [now, taskId]
     );
 
-    // Reward Coin Condition:
-    // "when user complete each task before estimate date, users earn rewards coin."
+    // Reward Coin Conditions:
+    // 1. Group must be a real group (have more than 1 approved member)
+    const members = this.getMembers(task.groupId);
+    const approvedMembers = members.filter((m) => m.status === 'approved');
+    const isRealGroup = approvedMembers.length > 1;
+
+    // 2. Task must NOT be assigned to more than one member, and must be specifically assigned to this completing user
+    const isSingleAssignedToUser =
+      task.assignedUserIds.length === 1 && task.assignedUserIds[0] === userId;
+
     let earnedCoin = false;
     let coinsAwarded = 0;
 
-    if (task.targetDate) {
+    if (isRealGroup && isSingleAssignedToUser && task.targetDate) {
       const targetTime = new Date(task.targetDate).getTime();
       // If completed before or on the target date (within same day)
       if (now <= targetTime + 24 * 60 * 60 * 1000) {

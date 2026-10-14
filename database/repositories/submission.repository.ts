@@ -17,8 +17,8 @@ interface SubmissionRow {
 function mapRow(row: SubmissionRow): Submission {
   return {
     id: row.id,
-    assignmentId: row.assignment_id ?? undefined,
-    groupId: row.group_id ?? undefined,
+    assignmentId: row.assignment_id && row.assignment_id.trim() ? row.assignment_id : undefined,
+    groupId: row.group_id && row.group_id.trim() ? row.group_id : undefined,
     userId: row.user_id,
     title: row.title,
     deadline: row.deadline,
@@ -64,12 +64,14 @@ export class SubmissionRepository {
   }): Submission {
     const id = generateId();
     const now = Date.now();
+    // Default to empty string if assignmentId is absent but groupId is present to safely satisfy legacy NOT NULL constraint
+    const safeAssignmentId = input.assignmentId ?? (input.groupId ? '' : null);
     this.db.runSync(
       `INSERT INTO submissions (id, assignment_id, group_id, user_id, title, deadline, created_at, updated_at, is_synced)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         id,
-        input.assignmentId ?? null,
+        safeAssignmentId,
         input.groupId ?? null,
         input.userId,
         input.title,
@@ -90,12 +92,13 @@ export class SubmissionRepository {
         [submission.title, submission.deadline, submission.updatedAt || now, submission.id]
       );
     } else {
+      const safeAssignmentId = submission.assignmentId ?? (submission.groupId ? '' : null);
       this.db.runSync(
         `INSERT INTO submissions (id, assignment_id, group_id, user_id, title, deadline, created_at, updated_at, is_synced)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
         [
           submission.id,
-          submission.assignmentId ?? null,
+          safeAssignmentId,
           submission.groupId ?? null,
           submission.userId,
           submission.title,

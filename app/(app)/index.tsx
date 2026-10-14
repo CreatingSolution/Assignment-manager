@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -23,8 +24,14 @@ import {
   SmartAssignmentRanking,
   SmartSchedulePlan,
 } from '../../services/smart-scheduler.service';
+import {
+  getBiometricStatus,
+  setBiometricEnabled,
+  type BiometricStatus,
+} from '../../services/biometric.service';
 import { getDueStatus } from '../../utils/date.utils';
 import type { Assignment, Priority } from '../../types';
+import { DocumentScannerModal } from '../../components/DocumentScannerModal';
 
 // ─── Status Banner ─────────────────────────────────────────────────────────────
 
@@ -166,19 +173,94 @@ export default function HomeScreen(): React.JSX.Element {
   const { data: courses = [] } = useCourses();
   const { data: counts } = useAssignmentCounts();
   const { triggerSync } = useSync();
-  const { coins, loadCoins } = useRewardsStore();
+  const { coins, loadCoins, spendCoins } = useRewardsStore();
 
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [statusSubFilter, setStatusSubFilter] = useState<'all' | 'pending' | 'in_progress'>('all');
+  const [bioStatus, setBioStatus] = useState<BiometricStatus | null>(null);
+  const [scannerVisible, setScannerVisible] = useState(false);
+
+  const handleOpenScanToPdf = () => {
+    const requiredCoins = 30;
+    if (coins < requiredCoins) {
+      Alert.alert(
+        '🔒 Scan to PDF Locked',
+        `No enough reward coins balance for use this Scan feature.\n\nYou need 30 reward coins to unlock and scan a document. Your current balance is ${coins} coins.\n\nComplete assignments early to earn more reward coins!`,
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Unlock Document Scanner 📑',
+      `Would you like to spend 30 reward coins to scan and convert documents to PDF?\n\n🪙 Current Balance: ${coins} Coins\n🪙 Balance After: ${coins - requiredCoins} Coins`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Pay 30 Coins & Scan',
+          onPress: async () => {
+            const success = await spendCoins(requiredCoins, 'Document Scanner & PDF Conversion', user?.id);
+            if (success) {
+              setScannerVisible(true);
+            } else {
+              Alert.alert(
+                'Payment Failed',
+                'No enough reward coins balance for use this Scan feature.'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
 
   useEffect(() => {
     if (user?.id) {
       void loadCoins(user.id);
     }
+    void getBiometricStatus().then(setBioStatus);
   }, [user?.id, loadCoins]);
+
+  const handleToggleBiometric = async () => {
+    if (!bioStatus?.isAvailable) {
+      Alert.alert('Biometrics Unavailable', 'This device does not support biometric hardware (Face ID / Fingerprint).');
+      return;
+    }
+    if (bioStatus.isEnabled) {
+      Alert.alert(
+        'Disable Biometric Lock?',
+        `Currently secured with ${bioStatus.biometricType}. Do you want to disable it?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Disable',
+            style: 'destructive',
+            onPress: async () => {
+              await setBiometricEnabled(false);
+              const updated = await getBiometricStatus();
+              setBioStatus(updated);
+              Alert.alert('Disabled', 'Biometric Lock has been turned off.');
+            },
+          },
+        ]
+      );
+    } else {
+      const success = await setBiometricEnabled(true);
+      if (success) {
+        const updated = await getBiometricStatus();
+        setBioStatus(updated);
+        Alert.alert(
+          'Biometric Lock Enabled! 🛡️',
+          `Your student assignments and workspace are now protected with ${bioStatus.biometricType}.`
+        );
+      } else {
+        Alert.alert('Verification Failed', 'Could not verify biometric credentials.');
+      }
+    }
+  };
 
   const onRefresh = async () => {
     setSyncing(true);
@@ -277,6 +359,16 @@ export default function HomeScreen(): React.JSX.Element {
           </TouchableOpacity>
 
           <TouchableOpacity
+            onPress={handleToggleBiometric}
+            style={[
+              styles.syncBtn,
+              { backgroundColor: bioStatus?.isEnabled ? '#DCFCE7' : '#F1F5F9' },
+            ]}
+          >
+            <Text style={{ fontSize: 13 }}>{bioStatus?.isEnabled ? '🛡️' : '🔒'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => void onRefresh()}
             disabled={syncing}
             style={styles.syncBtn}
@@ -290,37 +382,54 @@ export default function HomeScreen(): React.JSX.Element {
         </View>
       </View>
 
-      {/* Quick Action Navigation Grid */}
+      {/* Quick Action Navigation Grid (4 Features) */}
       <View style={styles.actionGrid}>
-        <TouchableOpacity
-          style={[styles.actionCard, { backgroundColor: COLORS.primary }]}
-          activeOpacity={0.8}
-          onPress={() => router.push('/assignments/create')}
-        >
-          <Text style={styles.actionCardIcon}>➕</Text>
-          <Text style={styles.actionCardTitle}>New Assignment</Text>
-          <Text style={styles.actionCardSub}>Milestones & Tasks</Text>
-        </TouchableOpacity>
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: COLORS.primary }]}
+            activeOpacity={0.8}
+            onPress={() => router.push('/assignments/create')}
+          >
+            <Text style={styles.actionCardIcon}>➕</Text>
+            <Text style={styles.actionCardTitle}>New Assignment</Text>
+            <Text style={styles.actionCardSub}>Milestones & Tasks</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.actionCard, { backgroundColor: '#0284c7' }]}
-          activeOpacity={0.8}
-          onPress={() => router.push('/groups')}
-        >
-          <Text style={styles.actionCardIcon}>👥</Text>
-          <Text style={styles.actionCardTitle}>Group Workspace</Text>
-          <Text style={styles.actionCardSub}>6-Digit Codes & Coins</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: '#0284c7' }]}
+            activeOpacity={0.8}
+            onPress={() => router.push('/groups')}
+          >
+            <Text style={styles.actionCardIcon}>👥</Text>
+            <Text style={styles.actionCardTitle}>Group Workspace</Text>
+            <Text style={styles.actionCardSub}>6-Digit Codes & Coins</Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.actionCard, { backgroundColor: '#7c3aed' }]}
-          activeOpacity={0.8}
-          onPress={() => router.push('/smart-schedule')}
-        >
-          <Text style={styles.actionCardIcon}>⚡</Text>
-          <Text style={styles.actionCardTitle}>Smart Schedule</Text>
-          <Text style={styles.actionCardSub}>AI Timetable Sync</Text>
-        </TouchableOpacity>
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: '#7c3aed' }]}
+            activeOpacity={0.8}
+            onPress={() => router.push('/smart-schedule')}
+          >
+            <Text style={styles.actionCardIcon}>⚡</Text>
+            <Text style={styles.actionCardTitle}>Smart Schedule</Text>
+            <Text style={styles.actionCardSub}>AI Priority & Workload</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: '#059669' }]}
+            activeOpacity={0.8}
+            onPress={handleOpenScanToPdf}
+          >
+            <View style={styles.lockBadge}>
+              <Text style={styles.lockBadgeText}>🔒 30 Coins</Text>
+            </View>
+            <Text style={styles.actionCardIcon}>📑</Text>
+            <Text style={styles.actionCardTitle}>Scan to PDF</Text>
+            <Text style={styles.actionCardSub}>Doc Scanner & Converter</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* AI Urgency Recommendation Banner */}
@@ -487,6 +596,16 @@ export default function HomeScreen(): React.JSX.Element {
           }
         />
       )}
+
+      {/* Scan to PDF Modal */}
+      <DocumentScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        userId={user?.id}
+        onAttached={() => {
+          void onRefresh();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -544,15 +663,19 @@ const styles = StyleSheet.create({
   },
   signOutText: { fontSize: 12, color: COLORS.text.secondary, fontWeight: '600' },
 
-  // Action Grid
+  // Action Grid (2x2 Grid)
   actionGrid: {
-    flexDirection: 'row',
-    gap: 8,
     paddingHorizontal: 16,
     marginBottom: 10,
+    gap: 8,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
   },
   actionCard: {
     flex: 1,
+    position: 'relative',
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 12,
@@ -575,6 +698,20 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     marginTop: 2,
     textAlign: 'center',
+  },
+  lockBadge: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  lockBadgeText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#FEF08A',
   },
 
   // AI Banner

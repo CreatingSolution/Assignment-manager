@@ -367,6 +367,11 @@ export async function syncGroupToFirestore(
 ): Promise<void> {
   const db = getDb();
   const groupRef = doc(db, 'groups', group.id);
+  const memberUserIds = members.map((m) => m.userId);
+  const activeMemberIds = members
+    .filter((m) => m.status === 'approved' || m.status === 'active')
+    .map((m) => m.userId);
+
   await setDoc(
     groupRef,
     {
@@ -376,6 +381,8 @@ export async function syncGroupToFirestore(
       adminUserId: group.adminUserId,
       assignmentId: group.assignmentId ?? null,
       members,
+      memberUserIds,
+      activeMemberIds,
       tasks,
       serverUpdatedAt: serverTimestamp(),
     },

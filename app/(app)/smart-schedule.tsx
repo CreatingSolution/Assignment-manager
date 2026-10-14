@@ -2,24 +2,15 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, PRIORITY_COLORS } from '../../constants';
 import { useAuth } from '../../hooks/use-auth.hook';
-import {
-  connectAndSyncMicrosoftCalendar,
-  disconnectMicrosoftAccount,
-  getConnectedMicrosoftAccount,
-  type MicrosoftAccount,
-} from '../../services/microsoft-calendar.service';
 import {
   analyzeAndRankAssignments,
   type SmartSchedulePlan,
@@ -29,56 +20,16 @@ import type { Priority } from '../../types';
 export default function SmartScheduleScreen(): React.JSX.Element {
   const router = useRouter();
   const { user } = useAuth();
-
-  const [msAccount, setMsAccount] = useState<MicrosoftAccount | null>(null);
-  const [msEmail, setMsEmail] = useState('shalani@university.com');
-  const [isConnecting, setIsConnecting] = useState(false);
   const [plan, setPlan] = useState<SmartSchedulePlan | null>(null);
 
   useEffect(() => {
     loadData();
   }, [user?.id]);
 
-  const loadData = async () => {
-    const acc = await getConnectedMicrosoftAccount();
-    setMsAccount(acc);
+  const loadData = () => {
     if (user?.id) {
       const p = analyzeAndRankAssignments(user.id);
       setPlan(p);
-    }
-  };
-
-  const handleConnectMs = async () => {
-    if (!msEmail.trim() || !msEmail.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid university email address.');
-      return;
-    }
-
-    try {
-      setIsConnecting(true);
-      const res = await connectAndSyncMicrosoftCalendar(
-        user?.id ?? 'default',
-        msEmail.trim(),
-        user?.name || user?.username
-      );
-      setMsAccount(res.account);
-      Alert.alert(
-        'Microsoft Calendar Connected! 📅',
-        `Successfully imported ${res.eventsCount} academic lectures & scheduled meetings from ${res.account.email}.\nYour assignment priorities have been dynamically re-ranked based on your free study hours!`
-      );
-      loadData();
-    } catch (e) {
-      Alert.alert('Error', 'Failed to connect Microsoft account');
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    if (user?.id) {
-      await disconnectMicrosoftAccount(user.id);
-      setMsAccount(null);
-      loadData();
     }
   };
 
@@ -96,61 +47,36 @@ export default function SmartScheduleScreen(): React.JSX.Element {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Microsoft Account Integration Card */}
+        {/* Workload Overview Card */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Microsoft 365 Academic Calendar</Text>
-            {msAccount?.isConnected ? (
-              <View style={styles.connectedBadge}>
-                <Text style={styles.connectedBadgeText}>CONNECTED</Text>
-              </View>
-            ) : (
-              <View style={styles.disconnectedBadge}>
-                <Text style={styles.disconnectedBadgeText}>NOT LINKED</Text>
-              </View>
-            )}
+            <Text style={styles.cardTitle}>⏱️ Unified Workload Overview</Text>
+            <View style={styles.hoursBadge}>
+              <Text style={styles.hoursBadgeText}>{plan?.totalPendingHours || 0}h Total</Text>
+            </View>
           </View>
 
           <Text style={styles.cardDesc}>
-            Connect your university email (e.g. shalani@university.com) to automatically factor in
-            scheduled lectures, tutorials, and meetings when calculating priority study order.
+            Dynamic priority order and daily focus calculated by comparing personal assignments,
+            sub-deadlines, and assigned tasks in collaborative group workspaces.
           </Text>
 
-          {msAccount?.isConnected ? (
-            <View style={styles.msConnectedBox}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.msEmailText}>{msAccount.email}</Text>
-                <Text style={styles.msSyncText}>
-                  Sync Status: Active · Lectures & Meetings factored in
-                </Text>
-              </View>
-              <TouchableOpacity onPress={handleDisconnect} style={styles.disconnectBtn}>
-                <Text style={styles.disconnectBtnText}>Unlink</Text>
-              </TouchableOpacity>
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statNum}>{plan?.personalWorkHours || 0}h</Text>
+              <Text style={styles.statLabel}>Personal Tasks</Text>
             </View>
-          ) : (
-            <View style={styles.msInputRow}>
-              <TextInput
-                style={styles.msInput}
-                placeholder="shalani@university.com"
-                placeholderTextColor={COLORS.text.muted}
-                value={msEmail}
-                onChangeText={setMsEmail}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity
-                onPress={handleConnectMs}
-                disabled={isConnecting}
-                style={styles.connectBtn}
-              >
-                {isConnecting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.connectBtnText}>Sync Calendar</Text>
-                )}
-              </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statNum}>{plan?.groupWorkHours || 0}h</Text>
+              <Text style={styles.statLabel}>Assigned Group Tasks</Text>
             </View>
-          )}
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statNum}>{plan?.rankedAssignments.length || 0}</Text>
+              <Text style={styles.statLabel}>Active Coursework</Text>
+            </View>
+          </View>
         </View>
 
         {/* Schedule Conflict Warning */}
@@ -165,17 +91,10 @@ export default function SmartScheduleScreen(): React.JSX.Element {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>🎯 Recommended Focus for Today</Text>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.hoursNotice}>{plan?.totalPendingHours || 0}h total work</Text>
-              {plan ? (
-                <Text style={styles.hoursBreakdown}>
-                  ({plan.personalWorkHours}h personal + {plan.groupWorkHours}h group)
-                </Text>
-              ) : null}
-            </View>
+            <Text style={styles.hoursNotice}>{plan?.totalPendingHours || 0}h total work</Text>
           </View>
           <Text style={styles.sectionDesc}>
-            Prioritized actions comparing personal assignments & assigned group tasks against calendar hours:
+            Prioritized action items across personal coursework and assigned group tasks:
           </Text>
 
           {plan?.todaysFocusTasks && plan.todaysFocusTasks.length > 0 ? (
@@ -236,12 +155,11 @@ export default function SmartScheduleScreen(): React.JSX.Element {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>📊 Optimal Assignment Priority Order</Text>
           <Text style={styles.sectionDesc}>
-            Ranked by urgency formula: Deadlines + Sub-deadlines + Workload vs Free Study Hours.
+            Ranked by urgency formula: Deadlines + Sub-deadlines + Effort vs Available Study Days.
           </Text>
 
           {plan?.rankedAssignments && plan.rankedAssignments.length > 0 ? (
             plan.rankedAssignments.map((rank, idx) => {
-              const pColor = PRIORITY_COLORS[rank.assignment.priority as Priority];
               const isCritical = rank.urgencyLabel === 'CRITICAL';
               return (
                 <TouchableOpacity
@@ -294,11 +212,9 @@ export default function SmartScheduleScreen(): React.JSX.Element {
                       ⏱ {rank.remainingHours}h needed · 📅 {rank.daysRemaining}d left
                       {rank.isGroup && rank.assignedTaskCount ? ` · 📋 ${rank.assignedTaskCount} tasks assigned` : ''}
                     </Text>
-                    {rank.busyHoursBeforeDeadline > 0 ? (
-                      <Text style={styles.busyMeta}>
-                        📅 {rank.busyHoursBeforeDeadline}h meetings
-                      </Text>
-                    ) : null}
+                    <Text style={styles.capacityMeta}>
+                      📚 {rank.freeHoursAvailable}h study window
+                    </Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -338,54 +254,46 @@ const styles = StyleSheet.create({
   },
   cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text.primary },
-  connectedBadge: {
-    backgroundColor: '#DEF7EC',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  connectedBadgeText: { fontSize: 10, fontWeight: '800', color: '#03543F' },
-  disconnectedBadge: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  disconnectedBadgeText: { fontSize: 10, fontWeight: '700', color: '#4B5563' },
-  cardDesc: { fontSize: 13, color: COLORS.text.secondary, marginTop: 6, lineHeight: 18 },
-  msInputRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  msInput: {
-    flex: 1,
+  hoursBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 14,
-    backgroundColor: '#F8FAFC',
+    borderColor: '#BFDBFE',
   },
-  connectBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  connectBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  msConnectedBox: {
+  hoursBadgeText: { fontSize: 12, fontWeight: '800', color: '#1D4ED8' },
+  cardDesc: { fontSize: 13, color: COLORS.text.secondary, marginTop: 6, lineHeight: 18 },
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    padding: 12,
+    backgroundColor: '#F8FAFC',
     borderRadius: 10,
+    padding: 12,
+    marginTop: 14,
     borderWidth: 1,
-    borderColor: '#BBF7D0',
-    marginTop: 12,
+    borderColor: '#E2E8F0',
   },
-  msEmailText: { fontSize: 14, fontWeight: '700', color: '#166534' },
-  msSyncText: { fontSize: 11, color: '#15803D', marginTop: 2 },
-  disconnectBtn: { paddingHorizontal: 10, paddingVertical: 6 },
-  disconnectBtnText: { fontSize: 12, color: COLORS.status.error, fontWeight: '700' },
+  statBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNum: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.text.primary,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: COLORS.text.secondary,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#CBD5E1',
+  },
   warningBox: {
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
@@ -411,7 +319,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text.primary },
   hoursNotice: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
-  hoursBreakdown: { fontSize: 10, color: COLORS.text.secondary, marginTop: 1 },
   groupBadgeSmall: {
     backgroundColor: '#E0F2FE',
     paddingHorizontal: 6,
@@ -469,7 +376,6 @@ const styles = StyleSheet.create({
   rankReason: { fontSize: 12, color: COLORS.text.secondary, lineHeight: 16, marginBottom: 8 },
   rankFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rankMeta: { fontSize: 11, fontWeight: '600', color: COLORS.text.secondary },
-  busyMeta: { fontSize: 11, fontWeight: '700', color: '#9333EA' },
+  capacityMeta: { fontSize: 11, fontWeight: '700', color: COLORS.primary },
   emptyText: { fontSize: 13, color: COLORS.text.muted, marginTop: 6 },
 });
-
