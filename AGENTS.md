@@ -1,55 +1,45 @@
 # AGENTS.md — Development Guidelines & Architecture
 
 > [!IMPORTANT]
-> **Expo SDK 54 Notice**: Always refer to the exact versioned documentation at [https://docs.expo.dev/versions/v54.0.0/](https://docs.expo.dev/versions/v54.0.0/) before adding packages or writing Expo/React Native code. React 19 and New Architecture (`newArchEnabled: true`) are enabled.
+> **Expo SDK 58 Notice**: Always refer to the exact versioned documentation at [https://docs.expo.dev/versions/v58.0.0/](https://docs.expo.dev/versions/v58.0.0/) before adding packages or writing Expo/React Native code. React 19 and New Architecture (`newArchEnabled: true`) are enabled.
 
 ---
 
 ## 1. Tech Stack
 
-- **Framework:** [Expo SDK 54](https://docs.expo.dev/versions/v54.0.0/) (~54.0.36)
-- **Runtime / Core:** React Native (0.81.5), React (19.1.0)
+- **Framework:** [Expo SDK 58](https://docs.expo.dev/versions/v58.0.0/) (~58.0.19)
+- **Runtime / Core:** React Native (0.88.0), React (19.3.0)
 - **Language:** Strict TypeScript (no `any` types)
 - **Local Persistence:** `@react-native-async-storage/async-storage` (v2.2.0)
-- **Connectivity Detection:** `@react-native-community/netinfo` (v11.4.1)
-- **Status Bar:** `expo-status-bar` (~3.0.9)
+- **Connectivity Detection:** `@react-native-community/netinfo` (v12.0.1)
+- **Status Bar:** `expo-status-bar` (~58.0.4)
 - **Architecture Flag:** React Native New Architecture enabled (`newArchEnabled: true`), Android edge-to-edge layout enabled
 
 ---
 
 ## 2. Modular Architecture
 
-Maintain a strict modular folder structure under `src/`:
+Maintain this modular folder structure at the project root (there is **no** `src/` folder). Use the `@/` path aliases from `tsconfig.json` (e.g. `@/services/...`, `@/hooks/...`).
 
 ```
-assignment-tracker/
+Assignment-manager/
+├── app/                     # expo-router screens (file-based routing; entry: index.js -> expo-router/entry)
+│   ├── _layout.tsx          # Root layout
+│   ├── (auth)/              # login.tsx, register.tsx
+│   └── (app)/               # index.tsx, smart-schedule.tsx, assignments/, groups/
+├── components/              # Reusable UI components (pickers, modals)
+├── hooks/                   # Custom React hooks (use-*.hook.ts), re-exported from hooks/index.ts
+├── services/                # Business logic: auth, firestore, network, notifications, OCR, scheduler
+├── database/                # expo-sqlite schema, migrations, and repositories/
+├── store/                   # zustand stores (network, sync, rewards)
+├── sync/                    # Offline sync engine and queue
+├── types/                   # Shared TypeScript types
+├── utils/                   # Date and ID helpers
+├── constants/               # App constants
 ├── assets/                  # App icons, splash screens, static assets
-├── src/
-│   ├── types/               # TypeScript interfaces, types, and enums (strictly typed)
-│   │   ├── assignment.ts
-│   │   └── storage.ts
-│   ├── services/            # Business logic, storage abstraction, and NetInfo services
-│   │   ├── storageService.ts
-│   │   ├── assignmentService.ts
-│   │   └── networkService.ts
-│   ├── screens/             # Screen-level container components
-│   │   ├── HomeScreen.tsx
-│   │   ├── AssignmentDetailScreen.tsx
-│   │   └── AddEditAssignmentScreen.tsx
-│   ├── components/          # Reusable, presentational UI components
-│   │   ├── AssignmentCard.tsx
-│   │   ├── PriorityBadge.tsx
-│   │   └── OfflineBanner.tsx
-│   ├── hooks/               # Custom React hooks (consuming services)
-│   │   ├── useAssignments.ts
-│   │   └── useNetworkStatus.ts
-│   └── utils/               # Date helpers, formatters, constants
-│       ├── dateUtils.ts
-│       └── constants.ts
-├── App.tsx                  # Main application root
+├── index.js                 # App entry point
 ├── app.json                 # Expo configuration
-├── tsconfig.json            # TypeScript configuration
-├── package.json
+├── tsconfig.json            # TypeScript configuration and path aliases
 └── AGENTS.md                # Agent instructions and guidelines
 ```
 
@@ -59,7 +49,7 @@ assignment-tracker/
 
 ### 3.1 Strict TypeScript (No `any` Types)
 - **Zero `any` Policy:** Explicitly define interfaces/types for all state, props, function parameters, and return types. Use `unknown` with type guards if dealing with uncertain external data.
-- **Data Models:** Define clear domain types in `src/types/assignment.ts`:
+- **Data Models:** Define clear domain types in `types/index.ts`:
   ```typescript
   export type Priority = 'low' | 'medium' | 'high';
   export type AssignmentStatus = 'pending' | 'in_progress' | 'completed';
@@ -79,7 +69,7 @@ assignment-tracker/
   ```
 
 ### 3.2 Service Layer & Business/Storage Logic Separation
-- **Dedicated Services (`src/services/`):** All `AsyncStorage` and `@react-native-community/netinfo` calls MUST be contained inside `src/services/` (e.g., `storageService.ts`, `assignmentService.ts`).
+- **Dedicated Services (`services/`):** All `AsyncStorage` and `@react-native-community/netinfo` calls MUST be contained inside `services/`, `database/`, or `store/` — never in `app/` screens or `components/`.
 - **Never Call Storage Directly in Components:** UI components and screens must not import or invoke `AsyncStorage` directly; they should interact via services or custom hooks (`useAssignments`).
 - **Error Handling & Fallbacks:** Always handle storage read/write failures gracefully inside services with typed return values or safe fallback defaults (e.g. `[]`).
 
